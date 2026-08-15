@@ -1,0 +1,98 @@
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function main() {
+  const targets = await (await fetch("http://127.0.0.1:9222/json")).json();
+  const page = targets.find((t) => t.type === "page");
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  let id = 0; const pending = new Map();
+  const send = (method, params = {}) => new Promise((resolve) => { const mid = ++id; pending.set(mid, resolve); ws.send(JSON.stringify({ id: mid, method, params })); });
+  ws.onmessage = (ev) => { const msg = JSON.parse(ev.data); if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); } };
+  await new Promise((resolve) => (ws.onopen = resolve));
+  const evalJs = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); if (r.result && r.result.exceptionDetails) return "EXC:" + JSON.stringify(r.result.exceptionDetails.exception || r.result.exceptionDetails.text); return r.result && r.result.result ? r.result.result.value : undefined; };
+  const click = async (x, y, btn = "left") => {
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: btn, clickCount: 1 });
+    await sleep(70);
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: btn, clickCount: 1 });
+    await sleep(250);
+  };
+  for (let i = 0; i < 40; i++) { const r = await evalJs(`(function(){var tt=[].slice.call(document.querySelectorAll('[data-slot="titlebar-tab-item"]'));for(var j=0;j<tt.length;j++){if((tt[j].textContent||'').indexOf('文件树功能')>=0)return 'yes';}return null;})()`); if (r) break; await sleep(500); }
+  await evalJs(`(function(){var tt=[].slice.call(document.querySelectorAll('[data-slot="titlebar-tab-item"]'));for(var i=0;i<tt.length;i++){var t=tt[i];if((t.textContent||'').indexOf('文件树功能')>=0){var tg=t.querySelector('[data-slot="tab-title"]')||t.querySelector('button')||t;tg.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,view:window}));tg.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,cancelable:true,view:window}));tg.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));break;}}})()`);
+  await sleep(3000);
+  const DIR = "D:/新项目/优化opencode";
+  // create a test file at root with enough lines to scroll
+  const testContent = Array.from({ length: 80 }, (_, i) => "行 " + (i + 1) + ": 这是第 " + (i + 1) + " 行测试内容 abcdef").join("\n");
+  await evalJs(`window.api.fs.write(${JSON.stringify(DIR + "/_editline.txt")}, ${JSON.stringify(testContent)})`);
+  let row = null;
+  for (let i = 0; i < 40; i++) {
+    const r = await evalJs(`(function(){var rows=[].slice.call(document.querySelectorAll('[data-slot="file-tree-v2-row"]'));for(var j=0;j<rows.length;j++){var p=rows[j].getAttribute('data-path')||'';if(p.indexOf('_editline.txt')>=0){var b=rows[j].getBoundingClientRect();if(b.width>0&&b.height>0&&b.top>0)return JSON.stringify({x:Math.round(b.left),y:Math.round(b.top)});}}return null;})()`);
+    if (r) { row = JSON.parse(r); break; } await sleep(400);
+  }
+  if (!row) { console.log("FAIL: test row not in tree"); process.exit(1); }
+  // open file, wait for native preview
+  await click(row.x + 20, row.y + 12);
+  await sleep(2500);
+  // right-click -> 编辑
+  await click(row.x + 40, row.y + 12, "right");
+  const menu = await evalJs(`(function(){var m=document.querySelector('#__oc_ft_menu');if(!m)return null;var ds=m.querySelectorAll('div');for(var i=0;i<ds.length;i++){if((ds[i].textContent||'').trim()==='编辑'){var r=ds[i].getBoundingClientRect();return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2});}}return null;})()`);
+  if (!menu) { console.log("FAIL: no 编辑 menu"); process.exit(1); }
+  const mi = JSON.parse(menu);
+  await click(mi.x, mi.y);
+  await sleep(1200);
+
+  const state = await evalJs(`(function(){
+     var file=document.querySelector('[data-component="file"]');
+     var c=file; for(var d=0;c&&d<10;d++){ if(c.classList&&c.classList.contains('mt-3')) break; c=c.parentElement; }
+     var kids=c?[].slice.call(c.children):[]; var layer=null;
+     for(var i=kids.length-1;i>=0;i--){ var k=kids[i]; if(k.querySelector('textarea')){ layer=k; break; } }
+     if(!layer) return JSON.stringify({noLayer:true});
+     var ta=layer.querySelector('textarea');
+     var body=null;
+     for(var i=0;i<layer.children.length;i++){ var ch=layer.children[i]; if(ch.querySelector && ch.querySelector('textarea')) body=ch; }
+     var gut=body?body.children[0]:null;
+     var gutInner=gut?gut.children[0]:null;
+     var nums=gutInner?[].slice.call(gutInner.children).map(function(d){return d.textContent;}):[];
+     var cs=ta?getComputedStyle(ta):null;
+     var head=layer.children[0];
+     var btns=head?[].slice.call(head.querySelectorAll('button')).map(function(b){return (b.textContent||'').trim();}):[];
+     var pv=document.querySelector('.mt-3.relative.h-full.min-h-0');
+     var gutterW = gut ? gut.getBoundingClientRect().width : 0;
+     var taRect = ta ? ta.getBoundingClientRect() : null;
+     var gutRect = gut ? gut.getBoundingClientRect() : null;
+     return JSON.stringify({
+       noLayer:false, hasGutter:!!gut, lineCount: nums.length, first5: nums.slice(0,5), last3: nums.slice(-3),
+       taLines: ta?ta.value.split("\\n").length:0,
+       tabSize: cs?cs.tabSize:null, fontSize: cs?cs.fontSize:null, lineHeight: cs?cs.lineHeight:null,
+       font: cs?cs.fontFamily.slice(0,45):null, gutterW: Math.round(gutterW),
+       gutterLeft: gutRect?Math.round(gutRect.left):0, taLeft: taRect?Math.round(taRect.left):0,
+       btns: btns,
+       taScrollTop: ta?ta.scrollTop:null, gutterScrollTop: gutInner?gutInner.scrollTop:null,
+       pvScrollTop: pv?pv.scrollTop:null
+     }, null, 1);
+   })()`);
+  console.log("edit layer:", state);
+  const s = JSON.parse(state);
+  if (s.noLayer) process.exit(1);
+  const syncTest = await evalJs(`(function(){
+     var ta=document.querySelector('textarea');
+     var gutInner=ta.parentElement.children[0].children[0];
+     ta.scrollTop = 240; ta.dispatchEvent(new Event('scroll'));
+     return JSON.stringify({ ta: ta.scrollTop, gutter: gutInner.scrollTop });
+   })()`);
+  console.log("after scroll:", syncTest);
+  // verify gutter lines still map to content after scroll (first visible number vs ta scrollTop/24)
+  const map = await evalJs(`(function(){
+     var ta=document.querySelector('textarea');
+     var gutInner=ta.parentElement.children[0].children[0];
+     var gutRect=gutInner.getBoundingClientRect();
+     var topNum=null;
+     var kids=[].slice.call(gutInner.children);
+     for(var i=0;i<kids.length;i++){ var r=kids[i].getBoundingClientRect(); if(r.bottom>gutRect.top){ topNum=kids[i].textContent; break; } }
+     return JSON.stringify({ topNum: topNum, expectedLine: Math.round(ta.scrollTop/24)+1 });
+   })()`);
+  console.log("gutter mapping:", map);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await sleep(600);
+  await evalJs(`window.api.fs.remove(${JSON.stringify(DIR + "/_editline.txt")})`);
+  ws.close();
+}
+main().catch((e) => { console.error("FATAL", e); process.exit(1); });

@@ -569,6 +569,8 @@
       if (getComputedStyle(container).position === "static") {
         container.style.position = "relative";
       }
+      // 打开前记录预览容器滚动位置，编辑层按同样像素初始化，避免内容跳动
+      const pvScroll = container.scrollTop || 0;
       const layer = document.createElement("div");
       layer.style.cssText =
         "position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;" +
@@ -606,19 +608,57 @@
       ta.spellcheck = false;
       ta.value = content;
       ta.style.cssText =
-        "flex:1;width:100%;box-sizing:border-box;resize:none;border:none;outline:none;background:transparent;" +
-        "color:var(--text-strong,#e8e8e8);padding:0 14px;line-height:24px;font-size:13px;tab-size:4;" +
-        "font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;" +
+        "flex:1;min-width:0;box-sizing:border-box;resize:none;border:none;outline:none;background:transparent;" +
+        "color:var(--text-strong,#e8e8e8);padding:0 14px;line-height:24px;font-size:13px;tab-size:2;" +
+        "font-family:var(--font-family-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace);" +
         "white-space:pre;overflow:auto;";
       const status = document.createElement("div");
       status.style.cssText =
         "flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:4px 12px;" +
         "border-top:1px solid var(--border-base,#333);font-size:11px;color:var(--text-weak,#888);" +
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      // 编辑主体：左侧行号列 + 右侧 textarea，行号随文本滚动同步
+      const body = document.createElement("div");
+      body.style.cssText =
+        "flex:1;min-height:0;display:flex;position:relative;";
+      const gutter = document.createElement("div");
+      gutter.style.cssText =
+        "flex:0 0 auto;overflow:hidden;position:relative;min-width:44px;max-width:64px;" +
+        "box-sizing:border-box;border-right:1px solid var(--border-base,#333);";
+      const gutterInner = document.createElement("div");
+      gutterInner.style.cssText =
+        "position:absolute;inset:0;overflow:hidden;";
+      gutter.appendChild(gutterInner);
+      body.appendChild(gutter);
+      body.appendChild(ta);
       layer.appendChild(head);
-      layer.appendChild(ta);
+      layer.appendChild(body);
       layer.appendChild(status);
       container.appendChild(layer);
+
+      // 行号渲染：每行一个 24px 高的等宽行号，与 textarea 行高严格对齐
+      const renderGutter = () => {
+        const n = ta.value.split("\n").length;
+        if (n === gutterInner._n) return;
+        gutterInner._n = n;
+        const frag = document.createDocumentFragment();
+        for (let i = 1; i <= n; i++) {
+          const d = document.createElement("div");
+          d.style.cssText =
+            "line-height:24px;font-size:13px;text-align:right;padding-right:10px;" +
+            "color:var(--text-weak,#888);" +
+            "font-family:var(--font-family-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace);" +
+            "user-select:none;";
+          d.textContent = String(i);
+          frag.appendChild(d);
+        }
+        gutterInner.textContent = "";
+        gutterInner.appendChild(frag);
+      };
+      const syncGutter = () => {
+        gutterInner.scrollTop = ta.scrollTop;
+      };
+      ta.addEventListener("scroll", syncGutter);
 
       const refreshStatus = () => {
         const v = ta.value;
@@ -697,7 +737,11 @@
           resolve(true);
         });
       }
-      ta.addEventListener("input", updateDirty);
+      ta.addEventListener("input", () => {
+        updateDirty();
+        renderGutter();
+        syncGutter();
+      });
       ta.addEventListener("keydown", (e) => {
         if (e.key === "Tab") {
           e.preventDefault();
@@ -729,6 +773,8 @@
           }
           updateDirty();
           refreshStatus();
+          renderGutter();
+          syncGutter();
         } else if (
           e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" ||
           e.key === "ArrowDown" || e.key === "Home" || e.key === "End" ||
@@ -743,6 +789,7 @@
       setTimeout(() => {
         refreshStatus();
         updateDirty();
+        renderGutter();
         ta.focus();
         const cur = editCursor.get(absPath);
         if (cur && cur.char >= 0 && cur.char <= ta.value.length) {
@@ -750,7 +797,13 @@
         } else {
           ta.setSelectionRange(ta.value.length, ta.value.length);
         }
-        refreshStatus();
+        // 保持预览滚动位置，覆盖浏览器聚焦时的自动滚动，避免内容跳动；
+        // 顺带让行号列与内容严格同步
+        requestAnimationFrame(() => {
+          ta.scrollTop = pvScroll;
+          syncGutter();
+          refreshStatus();
+        });
       }, 10);
     });
   }

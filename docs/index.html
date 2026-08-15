@@ -75,15 +75,17 @@
   <header>
     <span class="badge">opencode 桌面版 1.18.18 · Electron</span>
     <h1>opencode 桌面版增强补丁</h1>
-    <p>右键菜单增强：就地编辑器丝滑化 · 网页完整预览 · Markdown 预览</p>
+    <p>就地编辑器丝滑化 · 网页 / Markdown 预览 · 文件树实时刷新修复</p>
   </header>
 
   <div class="cards">
     <div class="card"><div class="icon">📝</div><h3>就地编辑</h3><p>右键"编辑"直接在预览框内编辑，废弃别扭的全屏编辑。</p></div>
+    <div class="card"><div class="icon">🔢</div><h3>行号对齐</h3><p>编辑层带行号列，与预览内容逐字对齐，滚动同步不跳动。</p></div>
     <div class="card"><div class="icon">📐</div><h3>丝滑体验</h3><p>打开不全选 · Tab 缩进不破坏撤销 · 保存后滚动保持 · 状态栏实时行列。</p></div>
     <div class="card"><div class="icon">🌐</div><h3>网页完整预览</h3><p>iframe 完整渲染 HTML，相对 css / js / 图片全部可加载，支持重新加载。</p></div>
     <div class="card"><div class="icon">📄</div><h3>Markdown 预览</h3><p>复用官方 marked + shiki + DOMPurify 管线，代码高亮自适应主题。</p></div>
     <div class="card"><div class="icon">🔄</div><h3>编辑 ↔ 预览</h3><p>两层互切，边写边看，无需来回切换文件。</p></div>
+    <div class="card"><div class="icon">🗂️</div><h3>文件树实时刷新</h3><p>移除 VCS 要求，任意目录增删改文件都实时刷新，轮询兜底 5s。</p></div>
   </div>
 
   <h2>快速体验</h2>
@@ -93,49 +95,59 @@
   <table>
     <tr><th>功能</th><th>说明</th></tr>
     <tr><td>就地编辑 <span class="tag green">已验证</span></td><td>右键"编辑"，textarea 覆盖在预览框上，直接改文件</td></tr>
+    <tr><td>行号列 <span class="tag green">已验证</span></td><td>编辑层左侧行号列，与预览内容逐字对齐，打开不跳动</td></tr>
+    <tr><td>工具栏同构</td><td>编辑 / 保存 / 取消等按钮放在预览窗口上方，与网页预览布局一致</td></tr>
     <tr><td>打开不全选</td><td>光标落在文末（或恢复上次记忆位置），不会误覆盖全文</td></tr>
     <tr><td>Tab / Shift+Tab 缩进</td><td>用 <code>execCommand("insertText")</code> 插入，<strong>不破坏 Ctrl+Z 撤销栈</strong>；多行选中整块缩进</td></tr>
     <tr><td>保存后滚动恢复</td><td>rAF 轮询等容器高度稳定两帧再写回，底部锚定置底</td></tr>
     <tr><td>脏状态提示</td><td>头栏"未保存"标记，值未变时保存按钮置灰</td></tr>
     <tr><td>底部状态栏</td><td>实时显示 <code>行 X，列 Y · 共 N 行 · 绝对路径</code></td></tr>
-    <tr><td>字体对齐预览框</td><td><code>13px / line-height 24px / tab-size 4</code>，等宽字体，视觉与预览一致</td></tr>
+    <tr><td>字体对齐预览框</td><td><code>13px / line-height 24px / tab-size 2</code>，等宽字体，视觉与预览一致</td></tr>
     <tr><td>HTML 预览 <span class="tag green">已验证</span></td><td>iframe 走 <code>oc-file://</code> 协议完整渲染，相对资源可用</td></tr>
     <tr><td>MD 预览 <span class="tag green">已验证</span></td><td>复用 bundle 管线，shiki 高亮用主题变量自适应深浅色</td></tr>
+    <tr><td>编辑↔预览互切</td><td>预览层"编辑"→就地编辑；编辑层"预览"→回到预览</td></tr>
+    <tr><td>文件树实时刷新 <span class="tag green">已验证</span></td><td>移除文件监听器的 VCS 要求，<strong>非 git 目录</strong>增删改文件也实时刷新文件树</td></tr>
+    <tr><td>轮询兜底优化</td><td>renderer 暴露 <code>tree.dir</code>，兜底轮询 20s → 5s，对缺失 dir store 加防御</td></tr>
   </table>
 
   <h2>技术架构</h2>
-  <div class="arch"><span class="c">┌─ renderer（filetree-menu.js 注入）──────────────────────┐</span>
+  <div class="arch"><span class="c">┌─ renderer（filetree-menu.js 注入 + bundle 补丁）────────┐</span>
 <span class="c">│</span>  右键菜单:  <span class="h">编辑</span> / <span class="h">预览</span>（按扩展名显示）        <span class="c">│</span>
-<span class="c">│</span>  就地编辑器: textarea + 状态栏 + 脏标记 + 滚动恢复    <span class="c">│</span>
+<span class="c">│</span>  就地编辑器: 行号列 + textarea + 状态栏 + 滚动恢复   <span class="c">│</span>
 <span class="c">│</span>  MD 预览:   <span class="h">__ocParseMarkdown</span>（bundle 现成管线）     <span class="c">│</span>
 <span class="c">│</span>  Web 预览:  &lt;iframe src=<span class="h">"oc-file://…"</span>&gt;  sandbox 隔离   <span class="c">│</span>
+<span class="c">│</span>  文件树:    <span class="h">tree.dir</span> 暴露 + 5s 轮询兜底           <span class="c">│</span>
 <span class="c">└───────────────┬────────────────────────────────────────┘</span>
                 <span class="c">│ fs IPC 写盘         │ 资源加载</span>
                 <span class="c">▼                    ▼</span>
-<span class="c">┌─ main（index.js 打补丁）────────────────────────────────┐</span>
+<span class="c">┌─ main（index.js + node chunk 打补丁）────────────────────┐</span>
 <span class="c">│</span>  ipcMain.handle(<span class="h">"fs-*"</span>)   read/write/mkdir/rm/…   <span class="c">│</span>
 <span class="c">│</span>  protocol.handle(<span class="h">"oc-file"</span>)  serve 任意绝对路径     <span class="c">│</span>
+<span class="c">│</span>  文件监听:  watcher 移除 VCS 要求（任意目录）        <span class="c">│</span>
 <span class="c">│</span>  OPENCODE_DEBUG_PORT=9222  调试后门（仅显式启用）     <span class="c">│</span>
 <span class="c">└───────────────────────────────────────────────────────</span>┘</div>
 
   <div class="note"><strong>oc-file:// 协议</strong>：<code>oc-file://local/&lt;绝对路径按段 encodeURIComponent&gt;</code>，win32 校验盘符绝对路径，目录自动找 <code>index.html</code>，响应带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。</div>
   <div class="note"><strong>安全</strong>：iframe <code>sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"</code>，跨源隔离——页面脚本无法触碰主界面 DOM。</div>
+  <div class="note"><strong>文件树实时刷新修复</strong>：opencode 原版文件监听器只在 <code>location2.vcs &amp;&amp; Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code> 时订阅——非 git 目录下文件树不实时更新。补丁将条件改为只判 <code>Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code>，任意目录都订阅 watcher；renderer 侧暴露 <code>tree.dir</code> 供轮询兜底枚举已加载目录、对缺失 dir store 加防御、兜底间隔 20s → 5s。</div>
 
   <h2>目录结构</h2>
 <pre><code>patch/
-├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览，~1100 行）
+├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览，~1360 行）
 ├─ needles/                # 各 patch 段的定位锚点（原子化校验）
 ├─ scripts/
 │  ├─ apply_patch.py       # 完整补丁（bundle / main / preload / index.html）
 │  ├─ apply_patch2.py      # 增量补丁（已带旧补丁的 extracted 上重跑）
+│  ├─ apply_livefix.py     # 文件树实时刷新修复（watcher 去 VCS 要求 + 轮询兜底）
 │  ├─ install_patch.ps1    # 部署辅助
-│  └─ cdp_preview_test.mjs / cdp_preview_verify.mjs   # CDP 端到端验证
+│  └─ cdp_*.mjs            # CDP 端到端验证（preview / gutter / verify …）
 └─ tools/                  # @electron/asar 打包工具</code></pre>
 
   <h2>部署到安装版</h2>
   <ol class="steps">
     <li>解压当前 <code>app.asar</code>（<code>asar extract</code>）</li>
     <li><code>python patch/scripts/apply_patch.py</code>（全新目录）或 <code>apply_patch2.py</code>（已带旧补丁）</li>
+    <li><code>python patch/scripts/apply_livefix.py</code> 应用文件树实时刷新修复</li>
     <li><code>npx asar pack app.asar.extracted app.asar.new</code> 重新打包</li>
     <li>替换安装目录 <code>resources/app.asar</code>，备份原文件</li>
   </ol>
@@ -144,6 +156,7 @@
   <ul class="tight">
     <li><code>cdp_preview_test.mjs</code> — 编辑丝滑 / MD 渲染 / HTML 预览层 / 编辑↔预览互切 / 测试文件自动清理</li>
     <li><code>cdp_preview_verify.mjs</code> — iframe 内 JS 运行、相对 CSS 生效、SVG 加载专项验证</li>
+    <li><code>cdp_gutter_test2.mjs</code> — 行号列对齐、滚动同步、打开保持预览位置专项验证</li>
     <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
   </ul>
   <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>
