@@ -1892,9 +1892,10 @@
           initTerm();
         } catch (_) {}
       });
-    } else {
-      killTerm();
     }
+    // 注意：收起时【不】调用 killTerm()——否则展开时 term 已存在、initTerm 只 fit 不
+    // 重新 spawn，sessionId 为 null 导致后续输入被静默丢弃（"死终端"bug）。
+    // 折叠面板保留 PTY 会话，展开后立即恢复可用；要彻底关闭请点标题栏"新开"。
   }
 
   // 持久注入：flex-col 容器在 Solid 挂载后才出现，仅同步/DOMContentLoaded/500ms 一次尝试不够。

@@ -42,6 +42,33 @@ async function main() {
     return null;
   };
 
+  // ---- 输入辅助 ----
+  // CDP 的 Input.insertText / dispatchKeyEvent(type:char) 走 IME 合成输入，inputType 为
+  // insertCompositionText，xterm 的 _inputEvent 只接受 inputType==="insertText" 的事件；
+  // 故用 DOM 级注入（value setter + InputEvent composed:true）模拟真实键盘，逐字符/整行均可。
+  const typeText = async (text) => {
+    const r = await evalJs(`(function(){
+      var ta=document.querySelector('#__oc_term_body .xterm-helper-textarea');
+      if(!ta)return 'NO TA';
+      ta.focus();
+      var setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
+      setter.call(ta,${JSON.stringify(text)});
+      ta.dispatchEvent(new InputEvent('input',{bubbles:true,data:${JSON.stringify(text)},inputType:'insertText',composed:true}));
+      return 'ok';
+    })()`);
+    return r === 'ok';
+  };
+  const pressEnter = async () => {
+    await evalJs(`(function(){
+      var ta=document.querySelector('#__oc_term_body .xterm-helper-textarea');
+      if(!ta)return 'NO TA';
+      ta.focus();
+      var opts={key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true};
+      ['keydown','keypress','keyup'].forEach(function(t){ta.dispatchEvent(new KeyboardEvent(t,opts));});
+      return 'ok';
+    })()`);
+  };
+
   await sleep(2000);
   let ok = true;
   const P = (name, pass, extra) => { console.log((pass ? "  PASS: " : "  FAIL: ") + name + (extra ? "  " + extra : "")); if (!pass) ok = false; };
@@ -62,10 +89,13 @@ async function main() {
   P("panel sits at bottom of right window column (not full-width)", pl.inCol && pl.narrower && pl.bar && pl.body, "w=" + pl.w + "/" + pl.winW);
   P("drag handle element exists", pl.drag, "id=__oc_term_drag");
 
-  // 2) expand
+  // 2) 复位到收起态再展开：面板可能因上次运行记忆高度而保持展开（h>50），
+  //    此时点 bar 会把面板收起，导致后续输入在隐藏面板上不可靠。
   const barRect = await evalJs(`(function(){var b=document.getElementById('__oc_term_bar');var r=b.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left+60),y:Math.round(r.top+r.height/2)});})()`);
   const bar = JSON.parse(barRect);
-  await click(bar.x, bar.y);
+  const curH = await evalJs(`(function(){var p=document.getElementById('__oc_term_panel');return p?Math.round(p.getBoundingClientRect().height):0;})()`);
+  if (curH > 50) { await click(bar.x, bar.y); await sleep(900); } // 已展开 → 先收起
+  await click(bar.x, bar.y); // 再展开
   await sleep(2500);
 
   // xterm inited?
@@ -88,10 +118,9 @@ async function main() {
     P("terminal textarea focusable", true);
     const tp = JSON.parse(ta);
     await click(tp.x, tp.y);
-    await send("Input.insertText", { text: "echo HELLO_OC_TERM" });
+    await typeText("echo HELLO_OC_TERM");
     await sleep(300);
-    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await pressEnter();
     const out = await waitFor(`(function(){
       var t=document.querySelector('#__oc_term_body .xterm-rows');
       if(!t)return null;

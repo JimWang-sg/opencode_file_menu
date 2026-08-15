@@ -48,7 +48,7 @@
 ```
 
 - **`oc-file://` 协议**：`oc-file://local/<绝对路径按段 encodeURIComponent>`，win32 校验盘符绝对路径，目录自动找 `index.html`，返回带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。
-- **集成终端**：渲染进程用 `patch/xterm/`（xterm.js 5.5 + addon-fit）加载到 `out/renderer/xterm/`；主进程复用已打包的 `@lydell/node-pty-win32-x64`（conpty），`oc-term-spawn` 返回 session id、`oc-term-input/resize/kill` 指令、`oc-term-data/exit` 推送，`ocTerms` Map 防 GC。面板挂载到**右侧窗口列容器**（session-review-v2 中含 `#review-panel` 的 flex-col）底部，只占右侧预览宽度；展开默认 220px / 收起 30px 标题栏，**面板顶部拖拽手柄可上下调整高度（50px–85% 视口，拖动中实时 fit，高度记忆于 `termState.lastHeight`，收起再展开恢复）**；cwd 取当前文件目录；MutationObserver + `isConnected` + **容器归属校验**（挂错容器即移除重建）应对 Solid 重建 body 子树 / 右侧列延迟出现。
+- **集成终端**：渲染进程用 `patch/xterm/`（xterm.js 5.5 + addon-fit）加载到 `out/renderer/xterm/`；主进程复用已打包的 `@lydell/node-pty-win32-x64`（conpty），`oc-term-spawn` 返回 session id、`oc-term-input/resize/kill` 指令、`oc-term-data/exit` 推送，`ocTerms` Map 防 GC。面板挂载到**右侧窗口列容器**（session-review-v2 中含 `#review-panel` 的 flex-col）底部，只占右侧预览宽度；展开默认 220px / 收起 30px 标题栏，**面板顶部拖拽手柄可上下调整高度（50px–85% 视口，拖动中实时 fit，高度记忆于 `termState.lastHeight`，收起再展开恢复）**；**收起仅折叠面板、保留 PTY 会话，再展开立即恢复可用**（要彻底关闭点"新开"）；cwd 取当前文件目录；MutationObserver + `isConnected` + **容器归属校验**（挂错容器即移除重建）应对 Solid 重建 body 子树 / 右侧列延迟出现。
 - **Markdown 管线复用**：renderer bundle 暴露 `globalThis.__ocParseMarkdown = (t) => parseMarkdown(t).then(sanitizeMarkdown)`，不新写渲染器；shiki 输出 `var(--syntax-*)` 主题变量，深浅色自适应。
 - **iframe 安全**：`sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"`，跨源隔离，脚本无法触碰主界面 DOM。
 - **文件树实时刷新**（`apply_livefix.py`）：原版文件监听器仅对 VCS 目录（`location2.vcs && Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER`）订阅，非 git 目录文件树不实时更新。补丁去掉 VCS 条件让任意目录都订阅 watcher，并在 renderer 侧暴露 `tree.dir` 供轮询兜底枚举、加上对缺失 dir store 的防御、把兜底间隔从 20s 收紧到 5s。

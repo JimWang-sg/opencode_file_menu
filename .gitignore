@@ -19,3 +19,7 @@ patch/tools/node_modules/
 *.log
 .DS_Store
 Thumbs.db
+# asar 打包产物（从源码经 apply_patch 重新生成）
+app.asar.drag
+app.asar.drag2
+app.asar.orig-*
