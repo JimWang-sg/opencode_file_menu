@@ -536,15 +536,32 @@
   }
 
   function previewContainer() {
-    const file = document.querySelector('[data-component="file"]');
-    if (!file) return null;
-    let el = file;
-    for (let d = 0; el && d < 10; d++) {
-      if (el.classList && el.classList.contains("mt-3")) return el;
-      el = el.parentElement;
+    const files = [].slice.call(document.querySelectorAll('[data-component="file"]'));
+    // 同一页面可能存在多个 file 容器（聊天历史引用 + 当前激活预览），必须遍历。
+    // 优先找 .mt-3 固定预览容器（session-review-v2），且其中确有 diffs-container 原生预览。
+    for (const file of files) {
+      let el = file;
+      for (let d = 0; el && d < 10; d++) {
+        if (el.classList && el.classList.contains("mt-3") && el.querySelector("diffs-container")) return el;
+        el = el.parentElement;
+      }
     }
-    if (file.parentElement && file.parentElement.nodeType === 1) return file.parentElement;
-    return null;
+    // fallback：可见的、含 diffs 的 file 容器（优先 select-text 主预览，其次高度最大）
+    const vis = files.filter((f) => {
+      const r = f.getBoundingClientRect();
+      return r.top > -100 && r.top < window.innerHeight && f.querySelector("diffs-container");
+    });
+    if (vis.length) {
+      vis.sort((a, b) => {
+        const as = a.classList.contains("select-text") ? 1 : 0;
+        const bs = b.classList.contains("select-text") ? 1 : 0;
+        if (as !== bs) return bs - as;
+        return b.getBoundingClientRect().height - a.getBoundingClientRect().height;
+      });
+      return vis[0];
+    }
+    const any = files.find((f) => f.querySelector("diffs-container"));
+    return any || null;
   }
 
   function editInPlace(absPath, relPath, content) {

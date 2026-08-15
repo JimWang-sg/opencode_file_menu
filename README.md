@@ -9,7 +9,7 @@
 | 功能 | 说明 |
 |---|---|
 | 📝 就地编辑 | 右键"编辑"或点击预览窗口上方的**编辑按钮**，直接在预览框内编辑文件，全屏编辑已废弃 |
-| 🔲 预览窗口上方工具栏 | 点击文件（txt/html/md 等）在原生预览窗口上方出现工具栏：文件名 + 预览(md/html) + **编辑按钮**，无需右键即可进入编辑 |
+| 🔲 预览窗口上方工具栏 | 点击文件（txt/html/md 等）在原生预览窗口上方出现工具栏：文件名 + 预览(md/html) + **编辑按钮**，无需右键即可进入编辑。**任意会话/项目目录均生效**（自动适配对话流与固定预览两种布局） |
 | 🔢 行号列 + 布局对齐 | 编辑层带行号列，与预览框内容逐字对齐（`tab-size:2`、13px / 24px、等宽字体），滚动同步不跳动，打开时保持预览位置 |
 | 📐 编辑丝滑优化 | 打开不全选、Tab/Shift+Tab 缩进不破坏撤销、保存后滚动恢复、脏状态提示、光标位置记忆、底部状态栏（行列/总行数/路径） |
 | 🌐 网页完整预览 | 右键"预览"对 `.html/.htm` 用 iframe 完整渲染，经 `oc-file://` 协议加载，**相对 css/js/图片全部可用**，支持重新加载 |
@@ -83,6 +83,8 @@ CDP 端到端脚本需要应用以调试端口启动（`OPENCODE_DEBUG_PORT=9222
 ```bash
 node patch/scripts/cdp_preview_test.mjs      # 编辑丝滑 / MD 预览 / HTML 预览 / 互切
 node patch/scripts/cdp_preview_verify.mjs    # 网页 iframe 内 JS/CSS/图片 专项验证
+node patch/scripts/cdp_nativebar_test.mjs    # 工具栏出现 → 编辑 → 就地编辑 → Esc 恢复
+node patch/scripts/cdp_nativebar_allsessions.mjs  # 跨会话/跨项目：每个 tab 点击文件均有工具栏
 ```
 
 > 注意：custom scheme 的 iframe 是 **OOPIF**（独立渲染进程），主 target 的 CDP 看不到它，必须 `Target.attachToTarget` 进 iframe 内部验证——这是 `cdp_preview_verify.mjs` 的做法。

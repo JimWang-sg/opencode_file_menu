@@ -96,7 +96,7 @@
   <table>
     <tr><th>功能</th><th>说明</th></tr>
     <tr><td>就地编辑 <span class="tag green">已验证</span></td><td>右键"编辑"或点预览窗口上方按钮，textarea 覆盖在预览框上，直接改文件</td></tr>
-    <tr><td>预览窗口上方工具栏 <span class="tag green">已验证</span></td><td>点击文件后原生预览上方出现工具栏：文件名 + 预览(md/html) + 编辑按钮，无需右键即可进入编辑</td></tr>
+    <tr><td>预览窗口上方工具栏 <span class="tag green">已验证</span></td><td>点击文件后原生预览上方出现工具栏：文件名 + 预览(md/html) + 编辑按钮，无需右键即可进入编辑；<strong>任意会话/项目目录均生效</strong>（自动适配对话流与固定预览两种布局）</td></tr>
     <tr><td>行号列 <span class="tag green">已验证</span></td><td>编辑层左侧行号列，与预览内容逐字对齐，打开不跳动</td></tr>
     <tr><td>工具栏同构</td><td>编辑 / 保存 / 取消等按钮放在预览窗口上方，与网页预览布局一致</td></tr>
     <tr><td>打开不全选</td><td>光标落在文末（或恢复上次记忆位置），不会误覆盖全文</td></tr>
@@ -160,6 +160,7 @@
     <li><code>cdp_preview_verify.mjs</code> — iframe 内 JS 运行、相对 CSS 生效、SVG 加载专项验证</li>
     <li><code>cdp_gutter_test2.mjs</code> — 行号列对齐、滚动同步、打开保持预览位置专项验证</li>
     <li><code>cdp_nativebar_test.mjs</code> / <code>cdp_nativebar_switch.mjs</code> — 预览窗口上方工具栏（编辑按钮出现、点击进入编辑、切换文件标题更新）</li>
+    <li><code>cdp_nativebar_allsessions.mjs</code> — 跨会话/跨项目：每个会话 tab 点击文件均有工具栏（覆盖对话流 + 固定预览两种布局）</li>
     <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
   </ul>
   <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>
