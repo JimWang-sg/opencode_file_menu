@@ -1609,6 +1609,16 @@
   }
 
   function ocMainContainer() {
+    // 优先：右侧窗口列容器（session-review-v2 中含 #review-panel 的 flex-col）。
+    // 终端挂在此列底部，只占右侧窗口宽度，不影响左侧文件树与对话区布局。
+    try {
+      const aside = document.getElementById("review-panel");
+      if (aside) {
+        const col = aside.closest('div[class*="flex-col"]');
+        if (col) return col;
+      }
+    } catch (_) {}
+    // fallback：顶层 flex-col 容器（旧布局/对话流）
     return [].slice.call(document.body.children).find(
       (c) =>
         c.tagName === "DIV" &&
@@ -1620,9 +1630,16 @@
   }
 
   function ensureTermPanel() {
-    if (termState.panel && termState.panel.isConnected) return termState.panel;
     const main = ocMainContainer();
     if (!main) return null;
+    // 旧面板挂在别的容器（如顶层 flex-col fallback）→ 移除重建到正确容器
+    if (termState.panel && termState.panel.isConnected && termState.panel.parentElement !== main) {
+      try {
+        termState.panel.remove();
+      } catch (_) {}
+      termState.panel = null;
+    }
+    if (termState.panel && termState.panel.isConnected) return termState.panel;
     const panel = document.createElement("div");
     panel.id = "__oc_term_panel";
     panel.style.cssText =
@@ -1836,10 +1853,17 @@
   function ensureTermPanelInit() {
     try {
       const main = ocMainContainer();
-      // 条件用 isConnected：panel 可能被 Solid 重建 body 子树时移除（变量非空但已断开），此时须重建
-      if (main && (!termState.panel || !termState.panel.isConnected)) ensureTermPanel();
+      // 需重建的条件：panel 缺失 / 断开 / 挂在错误容器（fallback 顶层列 vs 右侧列）
+      const bad =
+        !termState.panel ||
+        !termState.panel.isConnected ||
+        (main && termState.panel.parentElement !== main);
+      if (main && bad) ensureTermPanel();
     } catch (_) {}
-    if (!termState.panel || !termState.panel.isConnected) scheduleTermPanelInit(); // 未成功则持续重试
+    const main2 = ocMainContainer();
+    const stillBad =
+      !termState.panel || !termState.panel.isConnected || (main2 && termState.panel.parentElement !== main2);
+    if (stillBad) scheduleTermPanelInit(); // 未成功则持续重试
   }
   try {
     const moTerm = new MutationObserver(scheduleTermPanelInit);

@@ -33,18 +33,22 @@ async function main() {
   let ok = true;
   const P = (name, pass, extra) => { console.log((pass ? "  PASS: " : "  FAIL: ") + name + (extra ? "  " + extra : "")); if (!pass) ok = false; };
 
-  // 1) terminal panel present at bottom of flex-col container
+  // 1) terminal panel present at bottom of the RIGHT-side window column (session-review-v2),
+  //    NOT spanning the full window — so it must sit inside the #review-panel flex-col.
   const panel = await evalJs(`(function(){
     var p=document.getElementById('__oc_term_panel');
     if(!p)return 'NO';
     var r=p.getBoundingClientRect();
-    var main=[].slice.call(document.body.children).find(function(c){return c.className&&(c.className.toString()).indexOf('flex-col')>=0;});
-    var children=[].slice.call(main.children);
-    return JSON.stringify({last:children[children.length-1].id==='__oc_term_panel', h:Math.round(r.height), bar:!!document.getElementById('__oc_term_bar'), body:!!document.getElementById('__oc_term_body')});
+    var aside=document.getElementById('review-panel');
+    var col=aside?aside.closest('div[class*="flex-col"]'):null;
+    var children=col?[].slice.call(col.children):[];
+    var inCol = col && children[children.length-1].id==='__oc_term_panel';
+    // right column occupies only part of window width
+    return JSON.stringify({inCol:inCol, w:Math.round(r.width), winW:window.innerWidth, narrower:r.width < window.innerWidth*0.7, h:Math.round(r.height), bar:!!document.getElementById('__oc_term_bar'), body:!!document.getElementById('__oc_term_body')});
   })()`);
   console.log("panel:", panel);
   const pl = JSON.parse(panel);
-  P("panel exists at bottom of flex container", pl.last && pl.bar && pl.body);
+  P("panel sits at bottom of right window column (not full-width)", pl.inCol && pl.narrower && pl.bar && pl.body, "w=" + pl.w + "/" + pl.winW);
 
   // 2) click the bar to expand (bar is always visible at panel top; click its left-center, avoiding the action buttons on the right)
   const barRect = await evalJs(`(function(){var b=document.getElementById('__oc_term_bar');var r=b.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left+60),y:Math.round(r.top+r.height/2)});})()`);
