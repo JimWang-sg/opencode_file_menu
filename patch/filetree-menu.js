@@ -571,6 +571,9 @@
       const cleanup = () => {
         window.removeEventListener("keydown", onKey, true);
         layer.remove();
+        try {
+          hlStyle.remove();
+        } catch (_) {}
       };
       const finish = (value) => {
         if (done) return;
@@ -625,8 +628,9 @@
       ta.spellcheck = false;
       ta.value = content;
       ta.style.cssText =
-        "flex:1;min-width:0;box-sizing:border-box;resize:none;border:none;outline:none;background:transparent;" +
-        "color:var(--text-strong,#e8e8e8);padding:0 14px;line-height:24px;font-size:13px;tab-size:2;" +
+        "position:absolute;inset:0;box-sizing:border-box;resize:none;border:none;outline:none;background:transparent;" +
+        "color:transparent;caret-color:var(--text-strong,#e8e8e8);-webkit-text-fill-color:transparent;z-index:2;" +
+        "padding:0 14px;line-height:24px;font-size:13px;tab-size:2;" +
         "font-family:var(--font-family-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace);" +
         "white-space:pre;overflow:auto;";
       const status = document.createElement("div");
@@ -646,12 +650,72 @@
       gutterInner.style.cssText =
         "position:absolute;inset:0;overflow:hidden;";
       gutter.appendChild(gutterInner);
+      // 编辑主体：左侧行号列 + 右侧内容区。内容区底层放预览克隆的语法高亮，
+      // textarea 透明文字覆盖其上——编辑时完整保留预览的颜色标注样式。
+      const contentWrap = document.createElement("div");
+      contentWrap.style.cssText = "flex:1;min-width:0;position:relative;";
+      const hlPre = document.createElement("div");
+      hlPre.style.cssText =
+        "position:absolute;inset:0;overflow:hidden;padding:0 14px;line-height:24px;font-size:13px;tab-size:2;" +
+        "white-space:pre;z-index:1;pointer-events:none;" +
+        "font-family:var(--font-family-mono,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace);";
+      contentWrap.appendChild(hlPre);
+      contentWrap.appendChild(ta);
       body.appendChild(gutter);
-      body.appendChild(ta);
+      body.appendChild(contentWrap);
       layer.appendChild(head);
       layer.appendChild(body);
       layer.appendChild(status);
       container.appendChild(layer);
+
+      // 从原生预览克隆语法高亮（颜色标注），逐字对齐 textarea（同为 13px/24px/tab-size 2）。
+      // 编辑中未变行保留高亮，修改/新增行以主题文字色显示。
+      const hlStyle = document.createElement("style");
+      hlStyle.textContent =
+        "#__oc_hlpre > div{height:24px;line-height:24px;white-space:pre;overflow:hidden;}" +
+        "#__oc_hlpre{color:var(--text-base);}";
+      hlPre.id = "__oc_hlpre";
+      document.head.appendChild(hlStyle);
+      const hlEsc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      let hlOrig = [];
+      try {
+        const dc = container.querySelector("diffs-container");
+        const c = dc && dc.shadowRoot && dc.shadowRoot.querySelector("code [data-content]");
+        if (c && c.children.length) {
+          hlOrig = [].slice.call(c.children).map((r) => ({ text: r.textContent || "", html: r.outerHTML }));
+        }
+      } catch (_) {}
+      if (!hlOrig.length) {
+        hlOrig = content.split("\n").map((t) => ({ text: t, html: "" }));
+      }
+      let hlT = 0;
+      const syncHl = () => {
+        const lines = ta.value.split("\n");
+        const html = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          let h = null;
+          if (hlOrig[i] && hlOrig[i].text === line) h = hlOrig[i].html;
+          else {
+            for (let j = 0; j < hlOrig.length; j++) {
+              if (hlOrig[j].text === line) {
+                h = hlOrig[j].html;
+                break;
+              }
+            }
+          }
+          html.push(h || '<div data-line-type="context"><span style="color:var(--text-base)">' + hlEsc(line) + "</span></div>");
+        }
+        hlPre.innerHTML = html.join("");
+      };
+      syncHl();
+      const scheduleHl = () => {
+        clearTimeout(hlT);
+        hlT = setTimeout(syncHl, 120);
+      };
+      const syncHlScroll = () => {
+        hlPre.style.transform = "translateY(" + -ta.scrollTop + "px)";
+      };
 
       // 行号渲染：每行一个 24px 高的等宽行号，与 textarea 行高严格对齐
       const renderGutter = () => {
@@ -676,6 +740,7 @@
         gutterInner.scrollTop = ta.scrollTop;
       };
       ta.addEventListener("scroll", syncGutter);
+      ta.addEventListener("scroll", syncHlScroll);
 
       const refreshStatus = () => {
         const v = ta.value;
@@ -758,6 +823,7 @@
         updateDirty();
         renderGutter();
         syncGutter();
+        scheduleHl();
       });
       ta.addEventListener("keydown", (e) => {
         if (e.key === "Tab") {
@@ -792,6 +858,7 @@
           refreshStatus();
           renderGutter();
           syncGutter();
+          scheduleHl();
         } else if (
           e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" ||
           e.key === "ArrowDown" || e.key === "Home" || e.key === "End" ||
@@ -820,6 +887,7 @@
           ta.scrollTop = pvScroll;
           syncGutter();
           refreshStatus();
+          syncHlScroll();
         });
       }, 10);
     });
