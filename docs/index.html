@@ -79,7 +79,8 @@
   </header>
 
   <div class="cards">
-    <div class="card"><div class="icon">📝</div><h3>就地编辑</h3><p>右键"编辑"直接在预览框内编辑，废弃别扭的全屏编辑。</p></div>
+    <div class="card"><div class="icon">📝</div><h3>就地编辑</h3><p>右键"编辑"或点预览窗口上方按钮，直接在预览框内编辑，废弃别扭的全屏编辑。</p></div>
+    <div class="card"><div class="icon">🔲</div><h3>窗口上方工具栏</h3><p>点击文件后，原生预览窗口上方出现工具栏（文件名 + 预览 + 编辑），无需右键。</p></div>
     <div class="card"><div class="icon">🔢</div><h3>行号对齐</h3><p>编辑层带行号列，与预览内容逐字对齐，滚动同步不跳动。</p></div>
     <div class="card"><div class="icon">📐</div><h3>丝滑体验</h3><p>打开不全选 · Tab 缩进不破坏撤销 · 保存后滚动保持 · 状态栏实时行列。</p></div>
     <div class="card"><div class="icon">🌐</div><h3>网页完整预览</h3><p>iframe 完整渲染 HTML，相对 css / js / 图片全部可加载，支持重新加载。</p></div>
@@ -89,12 +90,13 @@
   </div>
 
   <h2>快速体验</h2>
-  <p>在左侧文件树右键任意 <code>.html</code> / <code>.md</code> 文件，菜单出现 <strong>预览</strong>（编辑之前），点击即可。</p>
+  <p>在左侧文件树<strong>点击任意文件</strong>（txt/html/md…），预览窗口上方出现工具栏 → 点 <strong>编辑</strong> 就地编辑；右键任意 <code>.html</code> / <code>.md</code> 文件可 <strong>预览</strong>。</p>
 
   <h2>新增功能详情</h2>
   <table>
     <tr><th>功能</th><th>说明</th></tr>
-    <tr><td>就地编辑 <span class="tag green">已验证</span></td><td>右键"编辑"，textarea 覆盖在预览框上，直接改文件</td></tr>
+    <tr><td>就地编辑 <span class="tag green">已验证</span></td><td>右键"编辑"或点预览窗口上方按钮，textarea 覆盖在预览框上，直接改文件</td></tr>
+    <tr><td>预览窗口上方工具栏 <span class="tag green">已验证</span></td><td>点击文件后原生预览上方出现工具栏：文件名 + 预览(md/html) + 编辑按钮，无需右键即可进入编辑</td></tr>
     <tr><td>行号列 <span class="tag green">已验证</span></td><td>编辑层左侧行号列，与预览内容逐字对齐，打开不跳动</td></tr>
     <tr><td>工具栏同构</td><td>编辑 / 保存 / 取消等按钮放在预览窗口上方，与网页预览布局一致</td></tr>
     <tr><td>打开不全选</td><td>光标落在文末（或恢复上次记忆位置），不会误覆盖全文</td></tr>
@@ -157,6 +159,7 @@
     <li><code>cdp_preview_test.mjs</code> — 编辑丝滑 / MD 渲染 / HTML 预览层 / 编辑↔预览互切 / 测试文件自动清理</li>
     <li><code>cdp_preview_verify.mjs</code> — iframe 内 JS 运行、相对 CSS 生效、SVG 加载专项验证</li>
     <li><code>cdp_gutter_test2.mjs</code> — 行号列对齐、滚动同步、打开保持预览位置专项验证</li>
+    <li><code>cdp_nativebar_test.mjs</code> / <code>cdp_nativebar_switch.mjs</code> — 预览窗口上方工具栏（编辑按钮出现、点击进入编辑、切换文件标题更新）</li>
     <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
   </ul>
   <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>

@@ -1358,4 +1358,123 @@
   };
   window.addEventListener("contextmenu", ctxHandler, true);
   document.addEventListener("contextmenu", ctxHandler, true);
+
+  // ── 原生预览顶部工具栏（"编辑"按钮）────────────────────────
+  // 点击文件（txt 等）在原生预览窗口上方显示一个工具栏：文件名 + 预览(html/md) + 编辑。
+  // 点击"编辑"直接进入就地编辑（复用 actions.edit）。
+  // Solid 切换文件会重建 mt3 子树，因此用 MutationObserver 监视，每次重建后重新注入。
+  let nativeSyncT = 0;
+  const scheduleNativeToolbar = () => {
+    if (nativeSyncT) return;
+    nativeSyncT = setTimeout(() => {
+      nativeSyncT = 0;
+      try {
+        ensureNativeToolbar();
+      } catch (_) {}
+    }, 120);
+  };
+
+  function removeNativeToolbar() {
+    const bar = document.getElementById("__oc_native_toolbar");
+    if (bar) bar.remove();
+    const container = previewContainer();
+    if (container && container.__ocNativeFlex) {
+      const sv = container.querySelector(".scroll-view.h-full");
+      container.style.display = "";
+      container.style.flexDirection = "";
+      if (sv) {
+        sv.style.flex = "";
+        sv.style.minHeight = "";
+      }
+      container.__ocNativeFlex = false;
+    }
+  }
+
+  function ensureNativeToolbar() {
+    const container = previewContainer();
+    if (!container) {
+      removeNativeToolbar();
+      return;
+    }
+    const tab = activeFileTab();
+    const relPath = activeTabRel();
+    if (!tab || !relPath) {
+      removeNativeToolbar();
+      return;
+    }
+    // 仅原生文本预览（diffs-container）显示；网页/MD 预览层、就地编辑层不显示
+    if (!container.querySelector("diffs-container")) {
+      removeNativeToolbar();
+      return;
+    }
+    const exist = document.getElementById("__oc_native_toolbar");
+    if (exist && exist.getAttribute("data-path") === relPath) return;
+    removeNativeToolbar();
+    const sv = container.querySelector(".scroll-view.h-full");
+    if (!sv) return;
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    container.__ocNativeFlex = true;
+    sv.style.flex = "1";
+    sv.style.minHeight = "0";
+
+    const bar = document.createElement("div");
+    bar.id = "__oc_native_toolbar";
+    bar.setAttribute("data-path", relPath);
+    bar.style.cssText =
+      "display:flex;align-items:center;gap:10px;padding:6px 12px;flex:0 0 auto;" +
+      "border-bottom:1px solid var(--border-base,#333);" +
+      "background:var(--background-stronger,#161616);";
+    const title = document.createElement("div");
+    title.textContent = nameOf(relPath);
+    title.title = relPath;
+    title.style.cssText =
+      "flex:0 0 auto;max-width:36%;font-size:13px;font-weight:600;color:var(--text-strong,#fff);" +
+      "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    const hint = document.createElement("div");
+    hint.style.cssText =
+      "flex:1;min-width:0;font-size:12px;color:var(--text-weak,#888);" +
+      "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;";
+    const type = previewType(relPath);
+    if (type) hint.textContent = type === "html" ? "HTML" : "Markdown";
+    const editBtn = makeBtn(L.edit, true);
+    editBtn.addEventListener("click", () => {
+      try {
+        runSafely(actions.edit)(relPath);
+      } catch (_) {}
+    });
+    bar.appendChild(title);
+    bar.appendChild(hint);
+    if (type) {
+      const previewBtn = makeBtn(L.preview, false);
+      previewBtn.addEventListener("click", () => {
+        try {
+          runSafely(actions.preview)(relPath);
+        } catch (_) {}
+      });
+      bar.appendChild(previewBtn);
+    }
+    bar.appendChild(editBtn);
+    container.insertBefore(bar, container.firstChild);
+  }
+
+  try {
+    const mo = new MutationObserver(scheduleNativeToolbar);
+    mo.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-selected", "data-selected"],
+    });
+  } catch (_) {}
+  document.addEventListener(
+    "click",
+    (e) => {
+      try {
+        if (e.target && e.target.closest && isInFileTree(e.target)) scheduleNativeToolbar();
+      } catch (_) {}
+    },
+    true
+  );
+  setTimeout(scheduleNativeToolbar, 600);
 })();
