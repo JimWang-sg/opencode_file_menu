@@ -1575,7 +1575,9 @@
     ro: null,
     resizeT: 0,
     exitH: null,
-    dataH: null
+    dataH: null,
+    dragging: false,
+    lastHeight: 220
   };
 
   function ocLoadScript(src, id) {
@@ -1676,9 +1678,24 @@
     actions.appendChild(newBtn);
     actions.appendChild(toggleBtn);
     bar.appendChild(actions);
+    // 拖拽手柄：面板顶部一条可抓取的横线，按住上下拖动调整面板高度。
+    // 初始收起态(30px)时隐藏；展开时显示在标题栏上方。
+    const drag = document.createElement("div");
+    drag.id = "__oc_term_drag";
+    drag.style.cssText =
+      "flex:0 0 auto;height:7px;cursor:row-resize;user-select:none;touch-action:none;" +
+      "position:relative;z-index:3;background:transparent;display:none;";
+    drag.addEventListener("mousedown", termDragStart);
+    drag.addEventListener("mouseenter", () => {
+      if (!termState.dragging) drag.style.background = "rgba(88,166,255,0.30)";
+    });
+    drag.addEventListener("mouseleave", () => {
+      if (!termState.dragging) drag.style.background = "transparent";
+    });
     const body = document.createElement("div");
     body.id = "__oc_term_body";
     body.style.cssText = "flex:1 1 auto;min-height:0;overflow:hidden;position:relative;";
+    panel.appendChild(drag);
     panel.appendChild(bar);
     panel.appendChild(body);
     main.appendChild(panel);
@@ -1818,11 +1835,53 @@
     }
   }
 
+  function termDragStart(e) {
+    // 按住手柄上下拖动 → 实时改变面板高度；向上拖高、向下拖矮。
+    const panel = ensureTermPanel();
+    if (!panel || !termState.open) return;
+    e.preventDefault();
+    e.stopPropagation();
+    termState.dragging = true;
+    const startY = e.clientY;
+    const startH = panel.getBoundingClientRect().height;
+    const maxH = Math.max(120, Math.round(window.innerHeight * 0.85)); // 上限 85% 视口高
+    const dragEl = document.getElementById("__oc_term_drag");
+    const move = (ev) => {
+      let h = startH + (startY - ev.clientY);
+      h = Math.max(50, Math.min(maxH, h)); // 下限 50px（标题栏+少量行）
+      panel.style.height = h + "px";
+      termState.lastHeight = h;
+      if (termState.fit) {
+        try {
+          termState.fit.fit();
+        } catch (_) {}
+      }
+    };
+    const up = () => {
+      termState.dragging = false;
+      if (dragEl) dragEl.style.background = "transparent";
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("blur", up);
+      if (termState.fit) {
+        try {
+          termState.fit.fit();
+        } catch (_) {}
+      }
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    window.addEventListener("blur", up);
+  }
+
   function toggleTermPanel() {
     const panel = ensureTermPanel();
     if (!panel) return;
     termState.open = !termState.open;
-    panel.style.height = termState.open ? "220px" : "30px"; // 收起时露出 30px 标题栏，可再次点击展开
+    // 展开用记忆高度（默认 220px，用户拖动后保持），收起露出 30px 标题栏
+    panel.style.height = termState.open ? termState.lastHeight + "px" : "30px";
+    const dg = document.getElementById("__oc_term_drag");
+    if (dg) dg.style.display = termState.open ? "" : "none";
     const tg = document.getElementById("__oc_term_toggle");
     if (tg) tg.textContent = termState.open ? "▼" : "▲";
     const hint = document.getElementById("__oc_term_hint");
