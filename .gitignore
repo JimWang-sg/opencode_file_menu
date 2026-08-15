@@ -1,0 +1,21 @@
+# 构建产物 / 大文件
+app.asar.extracted/
+app.asar.new
+app.asar.new.bak-*
+app.asar.bak-*
+
+# opencode 官方源码副本（独立 git 克隆，不纳入本仓库）
+oc-src/
+
+# 验证/临时目录
+_verify/
+_verify2/
+_verify3/
+6.txt
+
+# 依赖与日志
+node_modules/
+patch/tools/node_modules/
+*.log
+.DS_Store
+Thumbs.db

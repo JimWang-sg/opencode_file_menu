@@ -1,0 +1,1 @@
+  draftBlobGet: (id) => electron.ipcRenderer.invoke("draft-blob-get", id),

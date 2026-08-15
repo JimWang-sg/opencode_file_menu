@@ -1,0 +1,3 @@
+function FileTree(props) {
+  const file = useFile();
+  const level = props.level ?? 0;

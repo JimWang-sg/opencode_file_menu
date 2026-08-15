@@ -1,0 +1,4 @@
+    get ["data-path"]() {
+      return local.node.path;
+    },
+    get ["data-selected"]() {

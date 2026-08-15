@@ -1,0 +1,5 @@
+    return {
+      ready: () => view().ready(),
+      normalize: path.normalize,
+      tab: path.tab,
+      pathFromTab: path.pathFromTab,

@@ -1,0 +1,2 @@
+  ipcMain.handle("await-initialization", () => deps.awaitInitialization());
+  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks());

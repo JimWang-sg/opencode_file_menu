@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opencode 桌面版增强 — 功能说明</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #121a2b;
+    --panel2: #0f1626;
+    --border: #1e2a3f;
+    --text: #dbe4f0;
+    --dim: #8ea0ba;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; line-height: 1.65;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 28px 80px; }
+  header { text-align: center; padding: 24px 0 32px; }
+  header .badge {
+    display: inline-block; font-size: 13px; color: var(--accent);
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 14px; margin-bottom: 16px;
+    background: var(--panel);
+  }
+  h1 { font-size: 34px; margin: 0 0 8px; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header p { color: var(--dim); margin: 0; font-size: 15px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 28px 0; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px;
+  }
+  .card .icon { font-size: 22px; }
+  .card h3 { margin: 8px 0 6px; font-size: 16px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--dim); }
+  h2 { font-size: 20px; margin: 40px 0 14px; color: var(--accent); border-left: 3px solid var(--accent); padding-left: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 12px 0; background: var(--panel); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  th { color: var(--accent); font-weight: 600; background: var(--panel2); }
+  tr:last-child td { border-bottom: none; }
+  code, pre { font-family: var(--mono); }
+  code { background: var(--panel2); border: 1px solid var(--border); padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+  pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+  pre code { background: none; border: none; padding: 0; }
+  .arch { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; font-family: var(--mono); font-size: 12.5px; line-height: 1.9; overflow-x: auto; white-space: pre; }
+  .arch .c { color: var(--dim); }
+  .arch .h { color: var(--accent); }
+  .arch .a { color: var(--ok); }
+  .note { background: rgba(56, 189, 248, .07); border: 1px solid rgba(56, 189, 248, .25); border-radius: 10px; padding: 12px 16px; font-size: 13.5px; margin: 14px 0; }
+  .note strong { color: var(--accent); }
+  ul.tight { padding-left: 20px; font-size: 13.5px; color: var(--text); }
+  ul.tight li { margin: 4px 0; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; margin-left: 6px; vertical-align: 2px; }
+  .tag.green { background: rgba(52, 211, 153, .12); color: var(--ok); border: 1px solid rgba(52, 211, 153, .3); }
+  .tag.amber { background: rgba(251, 191, 36, .1); color: var(--warn); border: 1px solid rgba(251, 191, 36, .3); }
+  footer { margin-top: 48px; text-align: center; color: var(--dim); font-size: 13px; }
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li { position: relative; padding: 8px 0 8px 44px; font-size: 14px; }
+  .steps li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 8px; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">opencode 桌面版 1.18.18 · Electron</span>
+    <h1>opencode 桌面版增强补丁</h1>
+    <p>右键菜单增强：就地编辑器丝滑化 · 网页完整预览 · Markdown 预览</p>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="icon">📝</div><h3>就地编辑</h3><p>右键"编辑"直接在预览框内编辑，废弃别扭的全屏编辑。</p></div>
+    <div class="card"><div class="icon">📐</div><h3>丝滑体验</h3><p>打开不全选 · Tab 缩进不破坏撤销 · 保存后滚动保持 · 状态栏实时行列。</p></div>
+    <div class="card"><div class="icon">🌐</div><h3>网页完整预览</h3><p>iframe 完整渲染 HTML，相对 css / js / 图片全部可加载，支持重新加载。</p></div>
+    <div class="card"><div class="icon">📄</div><h3>Markdown 预览</h3><p>复用官方 marked + shiki + DOMPurify 管线，代码高亮自适应主题。</p></div>
+    <div class="card"><div class="icon">🔄</div><h3>编辑 ↔ 预览</h3><p>两层互切，边写边看，无需来回切换文件。</p></div>
+  </div>
+
+  <h2>快速体验</h2>
+  <p>在左侧文件树右键任意 <code>.html</code> / <code>.md</code> 文件，菜单出现 <strong>预览</strong>（编辑之前），点击即可。</p>
+
+  <h2>新增功能详情</h2>
+  <table>
+    <tr><th>功能</th><th>说明</th></tr>
+    <tr><td>就地编辑 <span class="tag green">已验证</span></td><td>右键"编辑"，textarea 覆盖在预览框上，直接改文件</td></tr>
+    <tr><td>打开不全选</td><td>光标落在文末（或恢复上次记忆位置），不会误覆盖全文</td></tr>
+    <tr><td>Tab / Shift+Tab 缩进</td><td>用 <code>execCommand("insertText")</code> 插入，<strong>不破坏 Ctrl+Z 撤销栈</strong>；多行选中整块缩进</td></tr>
+    <tr><td>保存后滚动恢复</td><td>rAF 轮询等容器高度稳定两帧再写回，底部锚定置底</td></tr>
+    <tr><td>脏状态提示</td><td>头栏"未保存"标记，值未变时保存按钮置灰</td></tr>
+    <tr><td>底部状态栏</td><td>实时显示 <code>行 X，列 Y · 共 N 行 · 绝对路径</code></td></tr>
+    <tr><td>字体对齐预览框</td><td><code>13px / line-height 24px / tab-size 4</code>，等宽字体，视觉与预览一致</td></tr>
+    <tr><td>HTML 预览 <span class="tag green">已验证</span></td><td>iframe 走 <code>oc-file://</code> 协议完整渲染，相对资源可用</td></tr>
+    <tr><td>MD 预览 <span class="tag green">已验证</span></td><td>复用 bundle 管线，shiki 高亮用主题变量自适应深浅色</td></tr>
+  </table>
+
+  <h2>技术架构</h2>
+  <div class="arch"><span class="c">┌─ renderer（filetree-menu.js 注入）──────────────────────┐</span>
+<span class="c">│</span>  右键菜单:  <span class="h">编辑</span> / <span class="h">预览</span>（按扩展名显示）        <span class="c">│</span>
+<span class="c">│</span>  就地编辑器: textarea + 状态栏 + 脏标记 + 滚动恢复    <span class="c">│</span>
+<span class="c">│</span>  MD 预览:   <span class="h">__ocParseMarkdown</span>（bundle 现成管线）     <span class="c">│</span>
+<span class="c">│</span>  Web 预览:  &lt;iframe src=<span class="h">"oc-file://…"</span>&gt;  sandbox 隔离   <span class="c">│</span>
+<span class="c">└───────────────┬────────────────────────────────────────┘</span>
+                <span class="c">│ fs IPC 写盘         │ 资源加载</span>
+                <span class="c">▼                    ▼</span>
+<span class="c">┌─ main（index.js 打补丁）────────────────────────────────┐</span>
+<span class="c">│</span>  ipcMain.handle(<span class="h">"fs-*"</span>)   read/write/mkdir/rm/…   <span class="c">│</span>
+<span class="c">│</span>  protocol.handle(<span class="h">"oc-file"</span>)  serve 任意绝对路径     <span class="c">│</span>
+<span class="c">│</span>  OPENCODE_DEBUG_PORT=9222  调试后门（仅显式启用）     <span class="c">│</span>
+<span class="c">└───────────────────────────────────────────────────────</span>┘</div>
+
+  <div class="note"><strong>oc-file:// 协议</strong>：<code>oc-file://local/&lt;绝对路径按段 encodeURIComponent&gt;</code>，win32 校验盘符绝对路径，目录自动找 <code>index.html</code>，响应带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。</div>
+  <div class="note"><strong>安全</strong>：iframe <code>sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"</code>，跨源隔离——页面脚本无法触碰主界面 DOM。</div>
+
+  <h2>目录结构</h2>
+<pre><code>patch/
+├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览，~1100 行）
+├─ needles/                # 各 patch 段的定位锚点（原子化校验）
+├─ scripts/
+│  ├─ apply_patch.py       # 完整补丁（bundle / main / preload / index.html）
+│  ├─ apply_patch2.py      # 增量补丁（已带旧补丁的 extracted 上重跑）
+│  ├─ install_patch.ps1    # 部署辅助
+│  └─ cdp_preview_test.mjs / cdp_preview_verify.mjs   # CDP 端到端验证
+└─ tools/                  # @electron/asar 打包工具</code></pre>
+
+  <h2>部署到安装版</h2>
+  <ol class="steps">
+    <li>解压当前 <code>app.asar</code>（<code>asar extract</code>）</li>
+    <li><code>python patch/scripts/apply_patch.py</code>（全新目录）或 <code>apply_patch2.py</code>（已带旧补丁）</li>
+    <li><code>npx asar pack app.asar.extracted app.asar.new</code> 重新打包</li>
+    <li>替换安装目录 <code>resources/app.asar</code>，备份原文件</li>
+  </ol>
+
+  <h2>验证</h2>
+  <ul class="tight">
+    <li><code>cdp_preview_test.mjs</code> — 编辑丝滑 / MD 渲染 / HTML 预览层 / 编辑↔预览互切 / 测试文件自动清理</li>
+    <li><code>cdp_preview_verify.mjs</code> — iframe 内 JS 运行、相对 CSS 生效、SVG 加载专项验证</li>
+    <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
+  </ul>
+  <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>
+
+  <h2>注意事项</h2>
+  <ul class="tight">
+    <li>补丁基于 1.18.18 产物文件编写，升级 opencode 后锚点需重新适配。</li>
+    <li>调试后门仅在显式设置环境变量时开启，不影响正常启动与安全。</li>
+  </ul>
+
+  <footer>opencode-desktop-patches · MIT License · 供学习与测试</footer>
+</div>
+</body>
+</html>
