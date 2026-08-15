@@ -1,6 +1,6 @@
 # opencode 桌面版增强补丁
 
-对 **opencode 桌面版（1.18.18，Electron）** 的增强：就地编辑器丝滑化 + 网页 / Markdown 预览 + 文件树实时刷新修复。核心是注入 `patch/filetree-menu.js`，给 main 进程打上 `oc-file://` 自定义协议，并修复文件监听不生效的 bug。
+对 **opencode 桌面版（1.18.18，Electron）** 的增强：就地编辑器丝滑化 + 网页 / Markdown 预览 + 集成终端 + 文件树实时刷新修复。核心是注入 `patch/filetree-menu.js`，给 main 进程打上 `oc-file://` 自定义协议、流式终端 IPC，并修复文件监听不生效的 bug。
 
 主界面为 session-review-v2 布局：左侧文件树 + 右侧文件预览标签页 + 底部对话区。
 
@@ -16,12 +16,14 @@
 | 📄 Markdown 预览 | 右键"预览"对 `.md/.markdown` 复用官方 marked + shiki + DOMPurify 管线，代码高亮自动适配深浅主题 |
 | 🔄 编辑↔预览互切 | 预览层有"编辑"按钮、编辑层有"预览"按钮，边写边看 |
 | 🗂️ 文件树实时刷新（bug 修复） | 移除文件监听器的 VCS（git）要求，**任意目录**（含非 git 目录）增删改文件都实时刷新文件树；轮询兜底 20s → 5s |
+| 🖥️ 集成终端 | 界面底部常驻终端栏（xterm.js + node-pty 交互式 shell），点击"终端"展开/收起，cwd 自动定位当前文件目录，支持多会话重开、自适应窗口 resize |
 
 ## 🚀 快速体验
 
 1. 左侧文件树**点击任意文件**（txt/html/md…）→ 预览窗口上方出现工具栏 → 点 **编辑** 就地编辑（带行号、对齐预览框）。
 2. 右键任意 `.html` / `.md` 文件 → **预览**（完整网页渲染 / Markdown 渲染）。
-3. 在**非 git 目录**下增删改文件，文件树实时刷新——无需手动刷新。
+3. 点击界面**底部"▣ 终端"栏** → 展开集成终端，cwd 自动指向当前文件所在目录；收起后保留标题栏可再次展开。
+4. 在**非 git 目录**下增删改文件，文件树实时刷新——无需手动刷新。
 
 ## 🔧 技术架构
 
@@ -31,12 +33,14 @@
 │  就地编辑器: 行号列 + textarea + 状态栏 + 脏标记  │
 │  MD 预览:   __ocParseMarkdown (bundle 管线)      │
 │  Web 预览:  <iframe src="oc-file://…">           │
+│  集成终端:  xterm.js + FitAddon 底部面板         │
 │  文件树:    tree.dir 暴露 + 5s 轮询兜底           │
 └─────────────────────────────────────────────────┘
-              │ fs IPC             │ 加载资源
-              ▼                    ▼
+              │ fs IPC   │ term IPC   │ 加载资源
+              ▼          ▼            ▼
 ┌─ main (index.js + node chunk) ──────────────────┐
 │  ipcMain.handle("fs-*")  读写/复制/删除          │
+│  oc-term-* 流式 PTY: spawn/input/resize/kill      │
 │  protocol.handle("oc-file")  serve 任意路径      │
 │  文件监听:  watcher 移除 VCS 要求（任意目录）      │
 │  OPENCODE_DEBUG_PORT=9222 调试后门(已打)         │
@@ -44,6 +48,7 @@
 ```
 
 - **`oc-file://` 协议**：`oc-file://local/<绝对路径按段 encodeURIComponent>`，win32 校验盘符绝对路径，目录自动找 `index.html`，返回带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。
+- **集成终端**：渲染进程用 `patch/xterm/`（xterm.js 5.5 + addon-fit）加载到 `out/renderer/xterm/`；主进程复用已打包的 `@lydell/node-pty-win32-x64`（conpty），`oc-term-spawn` 返回 session id、`oc-term-input/resize/kill` 指令、`oc-term-data/exit` 推送，`ocTerms` Map 防 GC。面板作为 body 顶层 flex 容器的第三个子元素（`flex:0 0 auto`），展开 220px / 收起 30px 标题栏，cwd 取当前文件目录；用 MutationObserver + `isConnected` 重建应对 Solid 重建 body 子树。
 - **Markdown 管线复用**：renderer bundle 暴露 `globalThis.__ocParseMarkdown = (t) => parseMarkdown(t).then(sanitizeMarkdown)`，不新写渲染器；shiki 输出 `var(--syntax-*)` 主题变量，深浅色自适应。
 - **iframe 安全**：`sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"`，跨源隔离，脚本无法触碰主界面 DOM。
 - **文件树实时刷新**（`apply_livefix.py`）：原版文件监听器仅对 VCS 目录（`location2.vcs && Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER`）订阅，非 git 目录文件树不实时更新。补丁去掉 VCS 条件让任意目录都订阅 watcher，并在 renderer 侧暴露 `tree.dir` 供轮询兜底枚举、加上对缺失 dir store 的防御、把兜底间隔从 20s 收紧到 5s。
@@ -52,7 +57,7 @@
 
 ```
 patch/
-├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览逻辑，~1360 行）
+├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览 + 集成终端，~1850 行）
 ├─ needles/                # 各 patch 段的定位锚点
 ├─ scripts/
 │  ├─ apply_patch.py       # 完整补丁脚本（bundle/main/preload/index.html）
@@ -86,6 +91,7 @@ node patch/scripts/cdp_preview_verify.mjs    # 网页 iframe 内 JS/CSS/图片 �
 node patch/scripts/cdp_nativebar_test.mjs    # 工具栏出现 → 编辑 → 就地编辑 → Esc 恢复
 node patch/scripts/cdp_nativebar_allsessions.mjs  # 跨会话/跨项目：每个 tab 点击文件均有工具栏
 node patch/scripts/cdp_hlkeep_test.mjs       # 编辑保留预览语法高亮（底层克隆 + 透明编辑器）
+node patch/scripts/cdp_terminal_test.mjs     # 集成终端：展开 → xterm 渲染 → 输入命令 → 输出捕获 → 收起
 ```
 
 > 注意：custom scheme 的 iframe 是 **OOPIF**（独立渲染进程），主 target 的 CDP 看不到它，必须 `Target.attachToTarget` 进 iframe 内部验证——这是 `cdp_preview_verify.mjs` 的做法。

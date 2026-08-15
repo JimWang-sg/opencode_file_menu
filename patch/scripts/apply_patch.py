@@ -359,21 +359,98 @@ old = '  registerRendererProtocol();\n'
 new = '  registerRendererProtocol();\n  registerOcFileProtocol();\n'
 patch_file(m, old, new)
 
+# 2f) interactive terminal: streamed PTY sessions (spawn/input/resize/kill + data push)
+old = (
+    '  ipcMain.handle("fs-clipboard-write", (_event, text) => {\n'
+    '    clipboard.writeText(String(text ?? ""));\n'
+    '    return { ok: true };\n'
+    '  });\n'
+    '  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks());\n'
+)
+new = (
+    '  ipcMain.handle("fs-clipboard-write", (_event, text) => {\n'
+    '    clipboard.writeText(String(text ?? ""));\n'
+    '    return { ok: true };\n'
+    '  });\n'
+    '  const ocTerms = new Map();\n'
+    '  let ocTermSeq = 0;\n'
+    '  ipcMain.handle("oc-term-spawn", (event, opts = {}) => {\n'
+    '    try {\n'
+    '      const id = "oc-term-" + ++ocTermSeq;\n'
+    '      const isWin = process.platform === "win32";\n'
+    '      const shell = opts.shell || (isWin ? "powershell.exe" : process.env.SHELL || "/bin/bash");\n'
+    '      const args = opts.shellArgs || (isWin ? [] : ["-l"]);\n'
+    '      const cwd = opts.cwd || process.env.USERPROFILE || process.env.HOME || process.cwd();\n'
+    '      const child = pty.spawn(shell, args, {\n'
+    '        name: "xterm-256color",\n'
+    '        cols: opts.cols || 80,\n'
+    '        rows: opts.rows || 24,\n'
+    '        cwd,\n'
+    '        env: process.env,\n'
+    '        useConpty: true\n'
+    '      });\n'
+    '      child.onData((data) => {\n'
+    '        try {\n'
+    '          event.sender.send("oc-term-data", { id, data });\n'
+    '        } catch {\n'
+    '        }\n'
+    '      });\n'
+    '      child.onExit((e) => {\n'
+    '        ocTerms.delete(id);\n'
+    '        try {\n'
+    '          event.sender.send("oc-term-exit", { id, code: e.exitCode });\n'
+    '        } catch {\n'
+    '        }\n'
+    '      });\n'
+    '      ocTerms.set(id, child);\n'
+    '      return { ok: true, id, shell, cwd };\n'
+    '    } catch (error) {\n'
+    '      return { ok: false, error: (error && error.message) || String(error) };\n'
+    '    }\n'
+    '  });\n'
+    '  ipcMain.on("oc-term-input", (_event, payload) => {\n'
+    '    const child = ocTerms.get(payload && payload.id);\n'
+    '    if (child) child.write(String(payload.data ?? ""));\n'
+    '  });\n'
+    '  ipcMain.on("oc-term-resize", (_event, payload) => {\n'
+    '    const child = ocTerms.get(payload && payload.id);\n'
+    '    if (child && payload.cols && payload.rows) child.resize(payload.cols, payload.rows);\n'
+    '  });\n'
+    '  ipcMain.on("oc-term-kill", (_event, payload) => {\n'
+    '    const child = ocTerms.get(payload && payload.id);\n'
+    '    if (child) {\n'
+    '      try {\n'
+    '        child.kill();\n'
+    '      } catch {\n'
+    '      }\n'
+    '      ocTerms.delete(payload.id);\n'
+    '    }\n'
+    '  });\n'
+    '  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks());\n'
+)
+patch_file(m, old, new)
+
 # ---------------- preload ----------------
 p = PRELOAD
-old = '  draftBlobGet: (id) => electron.ipcRenderer.invoke("draft-blob-get", id),\n'
+old = '  getWindowID: () => electron.ipcRenderer.invoke("get-window-id"),\n'
 new = (
-    '  draftBlobGet: (id) => electron.ipcRenderer.invoke("draft-blob-get", id),\n'
-    '  fs: {\n'
-    '    read: (path) => electron.ipcRenderer.invoke("fs-read", path),\n'
-    '    write: (path, content) => electron.ipcRenderer.invoke("fs-write", path, content),\n'
-    '    mkdir: (path) => electron.ipcRenderer.invoke("fs-mkdir", path),\n'
-    '    remove: (path) => electron.ipcRenderer.invoke("fs-remove", path),\n'
-    '    rename: (from, to) => electron.ipcRenderer.invoke("fs-rename", from, to),\n'
-    '    copy: (from, to, move) => electron.ipcRenderer.invoke("fs-copy", from, to, move),\n'
-    '    exists: (path) => electron.ipcRenderer.invoke("fs-exists", path),\n'
-    '    clipboardWrite: (text) => electron.ipcRenderer.invoke("fs-clipboard-write", text)\n'
+    '  terminal: {\n'
+    '    spawn: (opts) => electron.ipcRenderer.invoke("oc-term-spawn", opts),\n'
+    '    write: (id, data) => electron.ipcRenderer.send("oc-term-input", { id, data }),\n'
+    '    resize: (id, cols, rows) => electron.ipcRenderer.send("oc-term-resize", { id, cols, rows }),\n'
+    '    kill: (id) => electron.ipcRenderer.send("oc-term-kill", { id }),\n'
+    '    onData: (cb) => {\n'
+    '      const handler = (_e, payload) => cb(payload);\n'
+    '      electron.ipcRenderer.on("oc-term-data", handler);\n'
+    '      return () => electron.ipcRenderer.removeListener("oc-term-data", handler);\n'
+    '    },\n'
+    '    onExit: (cb) => {\n'
+    '      const handler = (_e, payload) => cb(payload);\n'
+    '      electron.ipcRenderer.on("oc-term-exit", handler);\n'
+    '      return () => electron.ipcRenderer.removeListener("oc-term-exit", handler);\n'
+    '    }\n'
     '  },\n'
+    '  getWindowID: () => electron.ipcRenderer.invoke("get-window-id"),\n'
 )
 patch_file(p, old, new)
 
@@ -389,6 +466,17 @@ patch_file(h, old, new)
 # ---------------- menu script ----------------
 shutil.copyfile(MENU_SRC, os.path.join(EXTRACT, "out", "renderer", "filetree-menu.js"))
 patches_done.append("filetree-menu.js -> out/renderer/filetree-menu.js")
+
+# ---------------- xterm terminal assets ----------------
+xterm_dir = os.path.join(EXTRACT, "out", "renderer", "xterm")
+os.makedirs(xterm_dir, exist_ok=True)
+for xname in ("xterm.js", "xterm.css", "addon-fit.js"):
+    xsrc = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "xterm", xname)
+    if os.path.exists(xsrc):
+        shutil.copyfile(xsrc, os.path.join(xterm_dir, xname))
+        patches_done.append(f"xterm/{xname} -> out/renderer/xterm/{xname}")
+    else:
+        print(f"[WARN] missing xterm asset: {xsrc}")
 
 print("ALL PATCHES OK:")
 for p in patches_done:

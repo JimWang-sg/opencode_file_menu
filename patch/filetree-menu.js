@@ -1562,4 +1562,291 @@
     true
   );
   setTimeout(scheduleNativeToolbar, 600);
+
+  // ==================== 集成终端面板 ====================
+  const termState = {
+    panel: null,
+    term: null,
+    fit: null,
+    sessionId: null,
+    open: false,
+    inited: false,
+    scriptPromise: null,
+    ro: null,
+    resizeT: 0,
+    exitH: null,
+    dataH: null
+  };
+
+  function ocLoadScript(src, id) {
+    if (document.getElementById(id)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const s = document.createElement("script");
+      s.id = id;
+      s.src = src;
+      s.onload = () => resolve();
+      s.onerror = () => resolve();
+      (document.head || document.documentElement).appendChild(s);
+    });
+  }
+
+  function ensureTermScripts() {
+    if (termState.scriptPromise) return termState.scriptPromise;
+    termState.scriptPromise = (async () => {
+      try {
+        if (!document.getElementById("__oc_xterm_css")) {
+          const l = document.createElement("link");
+          l.id = "__oc_xterm_css";
+          l.rel = "stylesheet";
+          l.href = "./xterm/xterm.css";
+          (document.head || document.documentElement).appendChild(l);
+        }
+        await ocLoadScript("./xterm/xterm.js", "__oc_xterm_js");
+        await ocLoadScript("./xterm/addon-fit.js", "__oc_xterm_fit");
+      } catch (_) {}
+    })();
+    return termState.scriptPromise;
+  }
+
+  function ocMainContainer() {
+    return [].slice.call(document.body.children).find(
+      (c) =>
+        c.tagName === "DIV" &&
+        c.className &&
+        c.className.toString &&
+        c.className.toString().indexOf("flex-col") >= 0 &&
+        c.className.toString().indexOf("h-dvh") >= 0
+    ) || null;
+  }
+
+  function ensureTermPanel() {
+    if (termState.panel && termState.panel.isConnected) return termState.panel;
+    const main = ocMainContainer();
+    if (!main) return null;
+    const panel = document.createElement("div");
+    panel.id = "__oc_term_panel";
+    panel.style.cssText =
+      "flex:0 0 auto;display:flex;flex-direction:column;min-height:0;height:30px;overflow:hidden;" +
+      "z-index:20;background:var(--v2-background-bg-deep,#0d1117);border-top:1px solid var(--border-base,#30363d);";
+    const bar = document.createElement("div");
+    bar.id = "__oc_term_bar";
+    bar.style.cssText =
+      "flex:0 0 auto;height:30px;display:flex;align-items:center;gap:10px;padding:0 12px;" +
+      "font-size:12px;color:var(--text-strong,#dbe4f0);background:var(--surface-raised-base,#161b22);" +
+      "cursor:pointer;user-select:none;";
+    bar.innerHTML =
+      '<span style="font-weight:600;letter-spacing:.3px;">▣ 终端</span>' +
+      '<span id="__oc_term_hint" style="color:var(--text-weak,#8b949e);">点击展开</span>';
+    const actions = document.createElement("div");
+    actions.style.cssText = "margin-left:auto;display:flex;align-items:center;gap:6px;";
+    const newBtn = document.createElement("button");
+    newBtn.textContent = "新开";
+    newBtn.title = "重开一个终端会话";
+    newBtn.style.cssText = btnTermCss();
+    newBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      termNewSession();
+    });
+    const toggleBtn = document.createElement("button");
+    toggleBtn.id = "__oc_term_toggle";
+    toggleBtn.textContent = "▲";
+    toggleBtn.title = "收起 / 展开";
+    toggleBtn.style.cssText = btnTermCss();
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleTermPanel();
+    });
+    actions.appendChild(newBtn);
+    actions.appendChild(toggleBtn);
+    bar.appendChild(actions);
+    const body = document.createElement("div");
+    body.id = "__oc_term_body";
+    body.style.cssText = "flex:1 1 auto;min-height:0;overflow:hidden;position:relative;";
+    panel.appendChild(bar);
+    panel.appendChild(body);
+    main.appendChild(panel);
+    bar.addEventListener("click", () => toggleTermPanel());
+    termState.panel = panel;
+    return panel;
+  }
+
+  function btnTermCss() {
+    return (
+      "cursor:pointer;border:1px solid var(--border-base,#30363d);border-radius:5px;background:transparent;" +
+      "color:var(--text-strong,#dbe4f0);font-size:11px;line-height:1;padding:4px 8px;"
+    );
+  }
+
+  function termCwd() {
+    let dir = "";
+    try {
+      dir = globalThis.__ocFileDir || "";
+    } catch (_) {}
+    if (!dir && window.api && window.api.terminal) {
+      try {
+        const tabs = document.querySelector('[data-slot="tabs-list"]');
+        const a = tabs && tabs.querySelector("a[href^='/server/']");
+        dir = (a && a.getAttribute("data-key")) || "";
+        if (dir.indexOf("file://") === 0) dir = decodeURIComponent(dir.slice(7));
+      } catch (_) {}
+    }
+    return dir || undefined;
+  }
+
+  function spawnTermSession() {
+    if (!window.api || !window.api.terminal) return;
+    const cwd = termCwd();
+    window.api.terminal
+      .spawn({ cwd })
+      .then((res) => {
+        if (res && res.ok && res.id) {
+          termState.sessionId = res.id;
+          if (termState.hint) termState.hint.textContent = (res.shell || "") + (res.cwd ? "  " + res.cwd : "");
+        }
+      })
+      .catch(() => {});
+  }
+
+  function termNewSession() {
+    if (termState.sessionId && window.api && window.api.terminal) {
+      try {
+        window.api.terminal.kill(termState.sessionId);
+      } catch (_) {}
+      termState.sessionId = null;
+    }
+    if (termState.term) {
+      termState.term.reset();
+      if (termState.hint) termState.hint.textContent = "点击展开";
+    }
+    spawnTermSession();
+  }
+
+  function initTerm() {
+    if (!window.Terminal || !window.FitAddon || !window.api || !window.api.terminal) return;
+    const body = document.getElementById("__oc_term_body");
+    if (!body) return;
+    if (termState.term) {
+      try {
+        termState.fit.fit();
+      } catch (_) {}
+      return;
+    }
+    const term = new window.Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      lineHeight: 1.2,
+      fontFamily: "ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace",
+      theme: { background: "#0d1117", foreground: "#dbe4f0", cursor: "#58a6ff", selectionBackground: "#264f78" },
+      scrollback: 5000,
+      allowProposedApi: true
+    });
+    const fit = new window.FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(body);
+    fit.fit();
+    termState.dataH = window.api.terminal.onData(({ id, data }) => {
+      if (id === termState.sessionId) term.write(data);
+    });
+    termState.exitH = window.api.terminal.onExit(({ id }) => {
+      if (id === termState.sessionId) {
+        termState.sessionId = null;
+        try {
+          term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
+        } catch (_) {}
+      }
+    });
+    term.onData((data) => {
+      if (termState.sessionId && window.api && window.api.terminal) {
+        window.api.terminal.write(termState.sessionId, data);
+      }
+    });
+    term.onResize(({ cols, rows }) => {
+      if (termState.sessionId && window.api && window.api.terminal) {
+        window.api.terminal.resize(termState.sessionId, cols, rows);
+      }
+    });
+    term.onKey(({ domEvent }) => {
+      if (domEvent.key === "Escape") {
+        // keep terminal focus; do not close editor
+      }
+    });
+    termState.term = term;
+    termState.fit = fit;
+    termState.inited = true;
+    termState.hint = document.getElementById("__oc_term_hint");
+    spawnTermSession();
+    try {
+      const ro = new ResizeObserver(() => {
+        if (termState.resizeT) return;
+        termState.resizeT = setTimeout(() => {
+          termState.resizeT = 0;
+          if (termState.open && termState.fit) {
+            try {
+              termState.fit.fit();
+            } catch (_) {}
+          }
+        }, 150);
+      });
+      ro.observe(body);
+      termState.ro = ro;
+    } catch (_) {}
+  }
+
+  function killTerm() {
+    if (termState.sessionId && window.api && window.api.terminal) {
+      try {
+        window.api.terminal.kill(termState.sessionId);
+      } catch (_) {}
+      termState.sessionId = null;
+    }
+  }
+
+  function toggleTermPanel() {
+    const panel = ensureTermPanel();
+    if (!panel) return;
+    termState.open = !termState.open;
+    panel.style.height = termState.open ? "220px" : "30px"; // 收起时露出 30px 标题栏，可再次点击展开
+    const tg = document.getElementById("__oc_term_toggle");
+    if (tg) tg.textContent = termState.open ? "▼" : "▲";
+    const hint = document.getElementById("__oc_term_hint");
+    if (hint) hint.textContent = termState.open ? "Shell · 回车执行" : "点击展开";
+    if (termState.open) {
+      ensureTermScripts().then(() => {
+        try {
+          initTerm();
+        } catch (_) {}
+      });
+    } else {
+      killTerm();
+    }
+  }
+
+  // 持久注入：flex-col 容器在 Solid 挂载后才出现，仅同步/DOMContentLoaded/500ms 一次尝试不够。
+  // 采用与 scheduleNativeToolbar 相同的 MutationObserver + debounce 模式，面板创建成功后自然停止。
+  let termInitT = 0;
+  const scheduleTermPanelInit = () => {
+    if (termInitT) return;
+    termInitT = setTimeout(() => {
+      termInitT = 0;
+      try {
+        ensureTermPanelInit();
+      } catch (_) {}
+    }, 120);
+  };
+  function ensureTermPanelInit() {
+    try {
+      const main = ocMainContainer();
+      // 条件用 isConnected：panel 可能被 Solid 重建 body 子树时移除（变量非空但已断开），此时须重建
+      if (main && (!termState.panel || !termState.panel.isConnected)) ensureTermPanel();
+    } catch (_) {}
+    if (!termState.panel || !termState.panel.isConnected) scheduleTermPanelInit(); // 未成功则持续重试
+  }
+  try {
+    const moTerm = new MutationObserver(scheduleTermPanelInit);
+    moTerm.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  } catch (_) {}
+  ensureTermPanelInit();
+  setTimeout(scheduleTermPanelInit, 400);
+  setTimeout(scheduleTermPanelInit, 1200);
+  setTimeout(scheduleTermPanelInit, 3000);
 })();

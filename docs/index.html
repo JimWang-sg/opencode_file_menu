@@ -87,6 +87,7 @@
     <div class="card"><div class="icon">📄</div><h3>Markdown 预览</h3><p>复用官方 marked + shiki + DOMPurify 管线，代码高亮自适应主题。</p></div>
     <div class="card"><div class="icon">🔄</div><h3>编辑 ↔ 预览</h3><p>两层互切，边写边看，无需来回切换文件。</p></div>
     <div class="card"><div class="icon">🗂️</div><h3>文件树实时刷新</h3><p>移除 VCS 要求，任意目录增删改文件都实时刷新，轮询兜底 5s。</p></div>
+    <div class="card"><div class="icon">🖥️</div><h3>集成终端</h3><p>底部常驻终端栏，xterm.js + node-pty 交互式 shell，cwd 自动定位当前目录。</p></div>
   </div>
 
   <h2>快速体验</h2>
@@ -110,6 +111,8 @@
     <tr><td>编辑↔预览互切</td><td>预览层"编辑"→就地编辑；编辑层"预览"→回到预览</td></tr>
     <tr><td>文件树实时刷新 <span class="tag green">已验证</span></td><td>移除文件监听器的 VCS 要求，<strong>非 git 目录</strong>增删改文件也实时刷新文件树</td></tr>
     <tr><td>轮询兜底优化</td><td>renderer 暴露 <code>tree.dir</code>，兜底轮询 20s → 5s，对缺失 dir store 加防御</td></tr>
+    <tr><td>集成终端 <span class="tag green">已验证</span></td><td>底部"▣ 终端"栏常驻，展开/收起（220px / 30px 标题栏），xterm.js 渲染 + node-pty 交互式 shell，<code>oc-term-*</code> 流式 IPC</td></tr>
+    <tr><td>终端 cwd 自动定位</td><td>展开时 cwd 取当前文件目录（<code>__ocFileDir</code>），多会话"新开"重开、窗口 resize 自动 fit</td></tr>
   </table>
 
   <h2>技术架构</h2>
@@ -119,11 +122,13 @@
 <span class="c">│</span>  MD 预览:   <span class="h">__ocParseMarkdown</span>（bundle 现成管线）     <span class="c">│</span>
 <span class="c">│</span>  Web 预览:  &lt;iframe src=<span class="h">"oc-file://…"</span>&gt;  sandbox 隔离   <span class="c">│</span>
 <span class="c">│</span>  文件树:    <span class="h">tree.dir</span> 暴露 + 5s 轮询兜底           <span class="c">│</span>
+<span class="c">│</span>  集成终端:  <span class="h">xterm.js</span> + FitAddon 底部面板          <span class="c">│</span>
 <span class="c">└───────────────┬────────────────────────────────────────┘</span>
-                <span class="c">│ fs IPC 写盘         │ 资源加载</span>
-                <span class="c">▼                    ▼</span>
+                <span class="c">│ fs IPC   │ term IPC   │ 资源加载</span>
+                <span class="c">▼          ▼            ▼</span>
 <span class="c">┌─ main（index.js + node chunk 打补丁）────────────────────┐</span>
 <span class="c">│</span>  ipcMain.handle(<span class="h">"fs-*"</span>)   read/write/mkdir/rm/…   <span class="c">│</span>
+<span class="c">│</span>  <span class="h">oc-term-*</span> 流式 PTY: spawn/input/resize/kill      <span class="c">│</span>
 <span class="c">│</span>  protocol.handle(<span class="h">"oc-file"</span>)  serve 任意绝对路径     <span class="c">│</span>
 <span class="c">│</span>  文件监听:  watcher 移除 VCS 要求（任意目录）        <span class="c">│</span>
 <span class="c">│</span>  OPENCODE_DEBUG_PORT=9222  调试后门（仅显式启用）     <span class="c">│</span>
@@ -132,10 +137,11 @@
   <div class="note"><strong>oc-file:// 协议</strong>：<code>oc-file://local/&lt;绝对路径按段 encodeURIComponent&gt;</code>，win32 校验盘符绝对路径，目录自动找 <code>index.html</code>，响应带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。</div>
   <div class="note"><strong>安全</strong>：iframe <code>sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"</code>，跨源隔离——页面脚本无法触碰主界面 DOM。</div>
   <div class="note"><strong>文件树实时刷新修复</strong>：opencode 原版文件监听器只在 <code>location2.vcs &amp;&amp; Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code> 时订阅——非 git 目录下文件树不实时更新。补丁将条件改为只判 <code>Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code>，任意目录都订阅 watcher；renderer 侧暴露 <code>tree.dir</code> 供轮询兜底枚举已加载目录、对缺失 dir store 加防御、兜底间隔 20s → 5s。</div>
+  <div class="note"><strong>集成终端</strong>：渲染进程 <code>patch/xterm/</code>（xterm.js 5.5 + addon-fit）部署到 <code>out/renderer/xterm/</code>；主进程复用已打包的 <code>@lydell/node-pty-win32-x64</code>（conpty），<code>oc-term-spawn</code> 返回 session id、<code>oc-term-input/resize/kill</code> 下发指令、<code>oc-term-data/exit</code> 推送到渲染层，<code>ocTerms</code> Map 防 GC。面板作为 body 顶层 flex 容器第三个子元素，展开 220px / 收起 30px 标题栏；用 MutationObserver + <code>isConnected</code> 重建，应对 Solid 应用重建 body 子树时面板被移除的问题。</div>
 
   <h2>目录结构</h2>
 <pre><code>patch/
-├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览，~1360 行）
+├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览 + 集成终端，~1850 行）
 ├─ needles/                # 各 patch 段的定位锚点（原子化校验）
 ├─ scripts/
 │  ├─ apply_patch.py       # 完整补丁（bundle / main / preload / index.html）
@@ -162,6 +168,7 @@
     <li><code>cdp_nativebar_test.mjs</code> / <code>cdp_nativebar_switch.mjs</code> — 预览窗口上方工具栏（编辑按钮出现、点击进入编辑、切换文件标题更新）</li>
     <li><code>cdp_nativebar_allsessions.mjs</code> — 跨会话/跨项目：每个会话 tab 点击文件均有工具栏（覆盖对话流 + 固定预览两种布局）</li>
     <li><code>cdp_hlkeep_test.mjs</code> — 编辑保留预览语法高亮（底层克隆高亮 + 透明编辑器，行对齐 + 新行同步）</li>
+    <li><code>cdp_terminal_test.mjs</code> — 集成终端：面板存在 → 展开 → xterm 渲染 → 输入命令 → 输出回显 → 收起保留标题栏</li>
     <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
   </ul>
   <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>
