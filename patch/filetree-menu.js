@@ -1543,6 +1543,125 @@
     container.insertBefore(bar, container.firstChild);
   }
 
+  // ---- 终端标题栏（永远可见，仿旧自定义终端"▣ 终端"控制栏设计）----
+  // 追加为右列 flex-col 的最后一个子项：终端面板在其上方展开，面板关闭时栏仍常驻底部；
+  // 点击栏或按钮：关闭→调出（自动新建会话）、拖到底→拉回、正常高度→收起。
+  function setupTerminalTitleBar() {
+    const ID = "__oc_term_titlebar";
+    const ICON =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+    const rightColumn = () => {
+      const rv = document.querySelector("#review-panel");
+      if (rv) {
+        const col = rv.closest('div[class*="flex-col"]');
+        if (col) return col;
+      }
+      // 兜底：终端面板的祖父级 flex 列
+      const p = document.querySelector("#terminal-panel");
+      return p && p.parentElement && p.parentElement.parentElement ? p.parentElement.parentElement : null;
+    };
+    const create = () => {
+      const col = rightColumn();
+      if (!col) return null;
+      let bar = document.getElementById(ID);
+      if (bar && bar.isConnected && bar.parentElement === col && col.lastElementChild === bar) return bar;
+      if (bar && bar.isConnected && bar.parentElement === col) {
+        col.appendChild(bar); // 已被 Solid 重排，重新置底
+        return bar;
+      }
+      bar = document.createElement("div");
+      bar.id = ID;
+      bar.style.cssText =
+        "flex:0 0 auto;height:30px;display:flex;align-items:center;gap:10px;padding:0 12px;" +
+        "font-size:12px;color:var(--text-strong,#dbe4f0);background:var(--surface-raised-base,#161b22);" +
+        "border-top:1px solid var(--border-base,#30363d);cursor:pointer;user-select:none;";
+      const label = document.createElement("span");
+      label.style.cssText = "font-weight:600;letter-spacing:.3px;";
+      label.textContent = "▣ 终端";
+      const hint = document.createElement("span");
+      hint.id = ID + "_hint";
+      hint.style.cssText = "color:var(--text-weak,#8b949e);";
+      hint.textContent = "点击展开";
+      const spacer = document.createElement("span");
+      spacer.style.cssText = "flex:1;";
+      const toggle = document.createElement("button");
+      toggle.id = ID + "_btn";
+      toggle.type = "button";
+      toggle.title = "展开 / 收起终端";
+      toggle.setAttribute("aria-label", "终端");
+      toggle.innerHTML = ICON;
+      toggle.style.cssText =
+        "cursor:pointer;border:1px solid var(--border-base,#30363d);border-radius:5px;background:transparent;" +
+        "color:var(--text-strong,#dbe4f0);font-size:11px;line-height:1;padding:4px 8px;display:flex;align-items:center;";
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        try { toggleTerminal(); } catch (_) {}
+      });
+      bar.addEventListener("click", () => { try { toggleTerminal(); } catch (_) {} });
+      bar.appendChild(label);
+      bar.appendChild(hint);
+      bar.appendChild(spacer);
+      bar.appendChild(toggle);
+      col.appendChild(bar);
+      return bar;
+    };
+    // Solid 切换文件会重建右列子树 → MutationObserver 重注入并置底
+    let t = 0;
+    const sync = () => {
+      if (t) return;
+      t = setTimeout(() => {
+        t = 0;
+        try { create(); } catch (_) {}
+      }, 80);
+    };
+    try {
+      const mo = new MutationObserver(sync);
+      mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+    create();
+    // 轻量状态同步：面板开着时标题栏高亮 + 提示翻转（每 900ms 轮询）
+    setInterval(() => {
+      const bar = document.getElementById(ID);
+      const hint = document.getElementById(ID + "_hint");
+      const btn = document.getElementById(ID + "_btn");
+      if (!bar || !bar.isConnected) { create(); return; }
+      const open = !!document.querySelector("#terminal-panel");
+      if (open) {
+        bar.style.background = "var(--surface-accent-base,#2d4a8c)";
+        if (hint) hint.textContent = "点击收起";
+        if (btn) btn.style.color = "#fff";
+      } else {
+        bar.style.background = "var(--surface-raised-base,#161b22)";
+        if (hint) hint.textContent = "点击展开";
+        if (btn) btn.style.color = "var(--text-strong,#dbe4f0)";
+      }
+    }, 900);
+  }
+  function toggleTerminal() {
+    const w = window;
+    if (typeof w.__ocToggleTerminal !== "function") {
+      toast("终端加载中…");
+      return;
+    }
+    const panel = document.querySelector("#terminal-panel");
+    if (!panel) {
+      w.__ocToggleTerminal(); // 面板未开 → 调出（原版会自动新建会话）
+      return;
+    }
+    const h = panel.getBoundingClientRect().height;
+    if (h <= 130) {
+      // 面板被拖到最底 → 拉回展开到视口 45%
+      if (typeof w.__ocTerminalResize === "function") {
+        w.__ocTerminalResize(Math.max(200, Math.round(window.innerHeight * 0.45)));
+      } else {
+        w.__ocToggleTerminal();
+      }
+    } else {
+      w.__ocToggleTerminal(); // 正常高度 → 收起
+    }
+  }
+  setupTerminalTitleBar();
+
   try {
     const mo = new MutationObserver(scheduleNativeToolbar);
     mo.observe(document.body || document.documentElement, {
@@ -1563,374 +1682,4 @@
   );
   setTimeout(scheduleNativeToolbar, 600);
 
-  // ==================== 集成终端面板 ====================
-  const termState = {
-    panel: null,
-    term: null,
-    fit: null,
-    sessionId: null,
-    open: false,
-    inited: false,
-    scriptPromise: null,
-    ro: null,
-    resizeT: 0,
-    exitH: null,
-    dataH: null,
-    dragging: false,
-    lastHeight: 220
-  };
-
-  function ocLoadScript(src, id) {
-    if (document.getElementById(id)) return Promise.resolve();
-    return new Promise((resolve) => {
-      const s = document.createElement("script");
-      s.id = id;
-      s.src = src;
-      s.onload = () => resolve();
-      s.onerror = () => resolve();
-      (document.head || document.documentElement).appendChild(s);
-    });
-  }
-
-  function ensureTermScripts() {
-    if (termState.scriptPromise) return termState.scriptPromise;
-    termState.scriptPromise = (async () => {
-      try {
-        if (!document.getElementById("__oc_xterm_css")) {
-          const l = document.createElement("link");
-          l.id = "__oc_xterm_css";
-          l.rel = "stylesheet";
-          l.href = "./xterm/xterm.css";
-          (document.head || document.documentElement).appendChild(l);
-        }
-        await ocLoadScript("./xterm/xterm.js", "__oc_xterm_js");
-        await ocLoadScript("./xterm/addon-fit.js", "__oc_xterm_fit");
-      } catch (_) {}
-    })();
-    return termState.scriptPromise;
-  }
-
-  function ocMainContainer() {
-    // 优先：右侧窗口列容器（session-review-v2 中含 #review-panel 的 flex-col）。
-    // 终端挂在此列底部，只占右侧窗口宽度，不影响左侧文件树与对话区布局。
-    try {
-      const aside = document.getElementById("review-panel");
-      if (aside) {
-        const col = aside.closest('div[class*="flex-col"]');
-        if (col) return col;
-      }
-    } catch (_) {}
-    // fallback：顶层 flex-col 容器（旧布局/对话流）
-    return [].slice.call(document.body.children).find(
-      (c) =>
-        c.tagName === "DIV" &&
-        c.className &&
-        c.className.toString &&
-        c.className.toString().indexOf("flex-col") >= 0 &&
-        c.className.toString().indexOf("h-dvh") >= 0
-    ) || null;
-  }
-
-  function ensureTermPanel() {
-    const main = ocMainContainer();
-    if (!main) return null;
-    // 旧面板挂在别的容器（如顶层 flex-col fallback）→ 移除重建到正确容器
-    if (termState.panel && termState.panel.isConnected && termState.panel.parentElement !== main) {
-      try {
-        termState.panel.remove();
-      } catch (_) {}
-      termState.panel = null;
-    }
-    if (termState.panel && termState.panel.isConnected) return termState.panel;
-    const panel = document.createElement("div");
-    panel.id = "__oc_term_panel";
-    panel.style.cssText =
-      "flex:0 0 auto;display:flex;flex-direction:column;min-height:0;height:30px;overflow:hidden;" +
-      "z-index:20;background:var(--v2-background-bg-deep,#0d1117);border-top:1px solid var(--border-base,#30363d);";
-    const bar = document.createElement("div");
-    bar.id = "__oc_term_bar";
-    bar.style.cssText =
-      "flex:0 0 auto;height:30px;display:flex;align-items:center;gap:10px;padding:0 12px;" +
-      "font-size:12px;color:var(--text-strong,#dbe4f0);background:var(--surface-raised-base,#161b22);" +
-      "cursor:pointer;user-select:none;";
-    bar.innerHTML =
-      '<span style="font-weight:600;letter-spacing:.3px;">▣ 终端</span>' +
-      '<span id="__oc_term_hint" style="color:var(--text-weak,#8b949e);">点击展开</span>';
-    const actions = document.createElement("div");
-    actions.style.cssText = "margin-left:auto;display:flex;align-items:center;gap:6px;";
-    const newBtn = document.createElement("button");
-    newBtn.textContent = "新开";
-    newBtn.title = "重开一个终端会话";
-    newBtn.style.cssText = btnTermCss();
-    newBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      termNewSession();
-    });
-    const toggleBtn = document.createElement("button");
-    toggleBtn.id = "__oc_term_toggle";
-    toggleBtn.textContent = "▲";
-    toggleBtn.title = "收起 / 展开";
-    toggleBtn.style.cssText = btnTermCss();
-    toggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleTermPanel();
-    });
-    actions.appendChild(newBtn);
-    actions.appendChild(toggleBtn);
-    bar.appendChild(actions);
-    // 拖拽手柄：面板顶部一条可抓取的横线，按住上下拖动调整面板高度。
-    // 初始收起态(30px)时隐藏；展开时显示在标题栏上方。
-    const drag = document.createElement("div");
-    drag.id = "__oc_term_drag";
-    drag.style.cssText =
-      "flex:0 0 auto;height:7px;cursor:row-resize;user-select:none;touch-action:none;" +
-      "position:relative;z-index:3;background:transparent;display:none;";
-    drag.addEventListener("mousedown", termDragStart);
-    drag.addEventListener("mouseenter", () => {
-      if (!termState.dragging) drag.style.background = "rgba(88,166,255,0.30)";
-    });
-    drag.addEventListener("mouseleave", () => {
-      if (!termState.dragging) drag.style.background = "transparent";
-    });
-    const body = document.createElement("div");
-    body.id = "__oc_term_body";
-    body.style.cssText = "flex:1 1 auto;min-height:0;overflow:hidden;position:relative;";
-    panel.appendChild(drag);
-    panel.appendChild(bar);
-    panel.appendChild(body);
-    main.appendChild(panel);
-    bar.addEventListener("click", () => toggleTermPanel());
-    termState.panel = panel;
-    return panel;
-  }
-
-  function btnTermCss() {
-    return (
-      "cursor:pointer;border:1px solid var(--border-base,#30363d);border-radius:5px;background:transparent;" +
-      "color:var(--text-strong,#dbe4f0);font-size:11px;line-height:1;padding:4px 8px;"
-    );
-  }
-
-  function termCwd() {
-    let dir = "";
-    try {
-      dir = globalThis.__ocFileDir || "";
-    } catch (_) {}
-    if (!dir && window.api && window.api.terminal) {
-      try {
-        const tabs = document.querySelector('[data-slot="tabs-list"]');
-        const a = tabs && tabs.querySelector("a[href^='/server/']");
-        dir = (a && a.getAttribute("data-key")) || "";
-        if (dir.indexOf("file://") === 0) dir = decodeURIComponent(dir.slice(7));
-      } catch (_) {}
-    }
-    return dir || undefined;
-  }
-
-  function spawnTermSession() {
-    if (!window.api || !window.api.terminal) return;
-    const cwd = termCwd();
-    window.api.terminal
-      .spawn({ cwd })
-      .then((res) => {
-        if (res && res.ok && res.id) {
-          termState.sessionId = res.id;
-          if (termState.hint) termState.hint.textContent = (res.shell || "") + (res.cwd ? "  " + res.cwd : "");
-        }
-      })
-      .catch(() => {});
-  }
-
-  function termNewSession() {
-    if (termState.sessionId && window.api && window.api.terminal) {
-      try {
-        window.api.terminal.kill(termState.sessionId);
-      } catch (_) {}
-      termState.sessionId = null;
-    }
-    if (termState.term) {
-      termState.term.reset();
-      if (termState.hint) termState.hint.textContent = "点击展开";
-    }
-    spawnTermSession();
-  }
-
-  function initTerm() {
-    if (!window.Terminal || !window.FitAddon || !window.api || !window.api.terminal) return;
-    const body = document.getElementById("__oc_term_body");
-    if (!body) return;
-    if (termState.term) {
-      try {
-        termState.fit.fit();
-      } catch (_) {}
-      return;
-    }
-    const term = new window.Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      lineHeight: 1.2,
-      fontFamily: "ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace",
-      theme: { background: "#0d1117", foreground: "#dbe4f0", cursor: "#58a6ff", selectionBackground: "#264f78" },
-      scrollback: 5000,
-      allowProposedApi: true
-    });
-    const fit = new window.FitAddon.FitAddon();
-    term.loadAddon(fit);
-    term.open(body);
-    fit.fit();
-    termState.dataH = window.api.terminal.onData(({ id, data }) => {
-      if (id === termState.sessionId) term.write(data);
-    });
-    termState.exitH = window.api.terminal.onExit(({ id }) => {
-      if (id === termState.sessionId) {
-        termState.sessionId = null;
-        try {
-          term.write("\r\n\x1b[90m[process exited]\x1b[0m\r\n");
-        } catch (_) {}
-      }
-    });
-    term.onData((data) => {
-      if (termState.sessionId && window.api && window.api.terminal) {
-        window.api.terminal.write(termState.sessionId, data);
-      }
-    });
-    term.onResize(({ cols, rows }) => {
-      if (termState.sessionId && window.api && window.api.terminal) {
-        window.api.terminal.resize(termState.sessionId, cols, rows);
-      }
-    });
-    term.onKey(({ domEvent }) => {
-      if (domEvent.key === "Escape") {
-        // keep terminal focus; do not close editor
-      }
-    });
-    termState.term = term;
-    termState.fit = fit;
-    termState.inited = true;
-    termState.hint = document.getElementById("__oc_term_hint");
-    spawnTermSession();
-    try {
-      const ro = new ResizeObserver(() => {
-        if (termState.resizeT) return;
-        termState.resizeT = setTimeout(() => {
-          termState.resizeT = 0;
-          if (termState.open && termState.fit) {
-            try {
-              termState.fit.fit();
-            } catch (_) {}
-          }
-        }, 150);
-      });
-      ro.observe(body);
-      termState.ro = ro;
-    } catch (_) {}
-  }
-
-  function killTerm() {
-    if (termState.sessionId && window.api && window.api.terminal) {
-      try {
-        window.api.terminal.kill(termState.sessionId);
-      } catch (_) {}
-      termState.sessionId = null;
-    }
-  }
-
-  function termDragStart(e) {
-    // 按住手柄上下拖动 → 实时改变面板高度；向上拖高、向下拖矮。
-    const panel = ensureTermPanel();
-    if (!panel || !termState.open) return;
-    e.preventDefault();
-    e.stopPropagation();
-    termState.dragging = true;
-    const startY = e.clientY;
-    const startH = panel.getBoundingClientRect().height;
-    const maxH = Math.max(120, Math.round(window.innerHeight * 0.85)); // 上限 85% 视口高
-    const dragEl = document.getElementById("__oc_term_drag");
-    const move = (ev) => {
-      let h = startH + (startY - ev.clientY);
-      h = Math.max(50, Math.min(maxH, h)); // 下限 50px（标题栏+少量行）
-      panel.style.height = h + "px";
-      termState.lastHeight = h;
-      if (termState.fit) {
-        try {
-          termState.fit.fit();
-        } catch (_) {}
-      }
-    };
-    const up = () => {
-      termState.dragging = false;
-      if (dragEl) dragEl.style.background = "transparent";
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-      window.removeEventListener("blur", up);
-      if (termState.fit) {
-        try {
-          termState.fit.fit();
-        } catch (_) {}
-      }
-    };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    window.addEventListener("blur", up);
-  }
-
-  function toggleTermPanel() {
-    const panel = ensureTermPanel();
-    if (!panel) return;
-    termState.open = !termState.open;
-    // 展开用记忆高度（默认 220px，用户拖动后保持），收起露出 30px 标题栏
-    panel.style.height = termState.open ? termState.lastHeight + "px" : "30px";
-    const dg = document.getElementById("__oc_term_drag");
-    if (dg) dg.style.display = termState.open ? "" : "none";
-    const tg = document.getElementById("__oc_term_toggle");
-    if (tg) tg.textContent = termState.open ? "▼" : "▲";
-    const hint = document.getElementById("__oc_term_hint");
-    if (hint) hint.textContent = termState.open ? "Shell · 回车执行" : "点击展开";
-    if (termState.open) {
-      ensureTermScripts().then(() => {
-        try {
-          initTerm();
-        } catch (_) {}
-      });
-    }
-    // 注意：收起时【不】调用 killTerm()——否则展开时 term 已存在、initTerm 只 fit 不
-    // 重新 spawn，sessionId 为 null 导致后续输入被静默丢弃（"死终端"bug）。
-    // 折叠面板保留 PTY 会话，展开后立即恢复可用；要彻底关闭请点标题栏"新开"。
-  }
-
-  // 持久注入：flex-col 容器在 Solid 挂载后才出现，仅同步/DOMContentLoaded/500ms 一次尝试不够。
-  // 采用与 scheduleNativeToolbar 相同的 MutationObserver + debounce 模式，面板创建成功后自然停止。
-  let termInitT = 0;
-  const scheduleTermPanelInit = () => {
-    if (termInitT) return;
-    termInitT = setTimeout(() => {
-      termInitT = 0;
-      try {
-        ensureTermPanelInit();
-      } catch (_) {}
-    }, 120);
-  };
-  function ensureTermPanelInit() {
-    try {
-      const main = ocMainContainer();
-      // 需重建的条件：panel 缺失 / 断开 / 挂在错误容器（fallback 顶层列 vs 右侧列）
-      const bad =
-        !termState.panel ||
-        !termState.panel.isConnected ||
-        (main && termState.panel.parentElement !== main);
-      if (main && bad) ensureTermPanel();
-    } catch (_) {}
-    const main2 = ocMainContainer();
-    const stillBad =
-      !termState.panel || !termState.panel.isConnected || (main2 && termState.panel.parentElement !== main2);
-    if (stillBad) scheduleTermPanelInit(); // 未成功则持续重试
-  }
-  try {
-    const moTerm = new MutationObserver(scheduleTermPanelInit);
-    moTerm.observe(document.body || document.documentElement, { childList: true, subtree: true });
-  } catch (_) {}
-  ensureTermPanelInit();
-  setTimeout(scheduleTermPanelInit, 400);
-  setTimeout(scheduleTermPanelInit, 1200);
-  setTimeout(scheduleTermPanelInit, 3000);
 })();

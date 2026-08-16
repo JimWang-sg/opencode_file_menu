@@ -87,11 +87,12 @@
     <div class="card"><div class="icon">📄</div><h3>Markdown 预览</h3><p>复用官方 marked + shiki + DOMPurify 管线，代码高亮自适应主题。</p></div>
     <div class="card"><div class="icon">🔄</div><h3>编辑 ↔ 预览</h3><p>两层互切，边写边看，无需来回切换文件。</p></div>
     <div class="card"><div class="icon">🗂️</div><h3>文件树实时刷新</h3><p>移除 VCS 要求，任意目录增删改文件都实时刷新，轮询兜底 5s。</p></div>
-    <div class="card"><div class="icon">🖥️</div><h3>集成终端</h3><p>右侧窗口下方常驻终端栏，xterm.js + node-pty 交互式 shell，cwd 自动定位当前目录，标题栏上方手柄可拖拽调整高度。</p></div>
+    <div class="card"><div class="icon">🖥️</div><h3>原版终端修复</h3><p>打包版原版终端 PTY 500（conpty .node 无法 dlopen，error 126）已修复，直接用原版 <code>#terminal-panel</code>（ghostty-web 渲染 + 流式 PTY），"新建终端"多开标签页。</p></div>
+    <div class="card"><div class="icon">🔲</div><h3>终端标题栏</h3><p>仿旧"▣ 终端"控制栏：30px 标题栏常驻右列底部、永远可见，关闭→点击调出，拖到底→点击拉回，正常高度→点击收起。</p></div>
   </div>
 
   <h2>快速体验</h2>
-  <p>在左侧文件树<strong>点击任意文件</strong>（txt/html/md…），预览窗口上方出现工具栏 → 点 <strong>编辑</strong> 就地编辑；右键任意 <code>.html</code> / <code>.md</code> 文件可 <strong>预览</strong>。</p>
+  <p>在左侧文件树<strong>点击任意文件</strong>（txt/html/md…），预览窗口上方出现工具栏 → 点 <strong>编辑</strong> 就地编辑；右键任意 <code>.html</code> / <code>.md</code> 文件可 <strong>预览</strong>。终端：点窗口底部常驻的<strong>终端标题栏</strong>（"▣ 终端"，或 <code>Ctrl+`</code>、菜单"查看 → 终端"）调出，<strong>新建终端</strong>开标签页；面板拖到底不会消失，点标题栏即拉回。</p>
 
   <h2>新增功能详情</h2>
   <table>
@@ -111,8 +112,10 @@
     <tr><td>编辑↔预览互切</td><td>预览层"编辑"→就地编辑；编辑层"预览"→回到预览</td></tr>
     <tr><td>文件树实时刷新 <span class="tag green">已验证</span></td><td>移除文件监听器的 VCS 要求，<strong>非 git 目录</strong>增删改文件也实时刷新文件树</td></tr>
     <tr><td>轮询兜底优化</td><td>renderer 暴露 <code>tree.dir</code>，兜底轮询 20s → 5s，对缺失 dir store 加防御</td></tr>
-    <tr><td>集成终端 <span class="tag green">已验证</span></td><td>右侧窗口底部"▣ 终端"栏常驻（只占右侧预览列宽），展开/收起（默认 220px / 30px 标题栏），<b>标题栏上方拖拽手柄可上下调整高度</b>（50px–85% 视口，拖动实时 fit、记忆上次高度），xterm.js 渲染 + node-pty 交互式 shell，<code>oc-term-*</code> 流式 IPC</td></tr>
-    <tr><td>终端 cwd 自动定位</td><td>展开时 cwd 取当前文件目录（<code>__ocFileDir</code>），多会话"新开"重开、窗口 resize 自动 fit</td></tr>
+    <tr><td>原版终端修复 <span class="tag green">已验证</span></td><td>打包版原版终端 PTY 500 错误已修复：conpty <code>.node</code> 无法从 asar 内 dlopen（error 126），补丁在 <code>@lydell/node-pty-win32-x64/lib/utils.js</code> 加 <code>app.asar.unpacked</code> 基路径 fallback；修复后原版 <code>#terminal-panel</code>（ghostty-web WASM 渲染 + <code>POST http://127.0.0.1:50757/pty</code> 流式 PTY）恢复可用</td></tr>
+    <tr><td>原版终端多开</td><td>点"新建终端"开标签页（"终端 1 / 2 / …"），ghostty canvas 渲染、命令回显正常</td></tr>
+    <tr><td>拖到底不消失 <span class="tag green">已验证</span></td><td>面板向下拖到底不再消失：原版 ResizeHandle <code>collapseThreshold: 50</code> 改为 <code>0</code>，面板钳制在最小高度 100px、手柄仍在，可拖回</td></tr>
+    <tr><td>终端标题栏 <span class="tag green">已验证</span></td><td>bundle 暴露 <code>__ocToggleTerminal</code> / <code>__ocTerminalResize</code>，<code>filetree-menu.js</code> 在右列 flex-col 末尾注入 30px 常驻标题栏（"▣ 终端"标签 + 状态提示 + 终端图标按钮）：未开→调出（自动新建会话）、拖到底（≤130px）→拉回视口 45%、正常高度→收起；MutationObserver 在 Solid 重建后重注入置底，900ms 轮询更新高亮与提示</td></tr>
   </table>
 
   <h2>技术架构</h2>
@@ -122,13 +125,11 @@
 <span class="c">│</span>  MD 预览:   <span class="h">__ocParseMarkdown</span>（bundle 现成管线）     <span class="c">│</span>
 <span class="c">│</span>  Web 预览:  &lt;iframe src=<span class="h">"oc-file://…"</span>&gt;  sandbox 隔离   <span class="c">│</span>
 <span class="c">│</span>  文件树:    <span class="h">tree.dir</span> 暴露 + 5s 轮询兜底           <span class="c">│</span>
-<span class="c">│</span>  集成终端:  <span class="h">xterm.js</span> + FitAddon 底部面板          <span class="c">│</span>
 <span class="c">└───────────────┬────────────────────────────────────────┘</span>
-                <span class="c">│ fs IPC   │ term IPC   │ 资源加载</span>
-                <span class="c">▼          ▼            ▼</span>
+                <span class="c">│ fs IPC   │ 资源加载</span>
+                <span class="c">▼          ▼</span>
 <span class="c">┌─ main（index.js + node chunk 打补丁）────────────────────┐</span>
 <span class="c">│</span>  ipcMain.handle(<span class="h">"fs-*"</span>)   read/write/mkdir/rm/…   <span class="c">│</span>
-<span class="c">│</span>  <span class="h">oc-term-*</span> 流式 PTY: spawn/input/resize/kill      <span class="c">│</span>
 <span class="c">│</span>  protocol.handle(<span class="h">"oc-file"</span>)  serve 任意绝对路径     <span class="c">│</span>
 <span class="c">│</span>  文件监听:  watcher 移除 VCS 要求（任意目录）        <span class="c">│</span>
 <span class="c">│</span>  OPENCODE_DEBUG_PORT=9222  调试后门（仅显式启用）     <span class="c">│</span>
@@ -137,11 +138,11 @@
   <div class="note"><strong>oc-file:// 协议</strong>：<code>oc-file://local/&lt;绝对路径按段 encodeURIComponent&gt;</code>，win32 校验盘符绝对路径，目录自动找 <code>index.html</code>，响应带 CORS 头，MIME 覆盖 html/css/js/图片/字体/音视频。</div>
   <div class="note"><strong>安全</strong>：iframe <code>sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"</code>，跨源隔离——页面脚本无法触碰主界面 DOM。</div>
   <div class="note"><strong>文件树实时刷新修复</strong>：opencode 原版文件监听器只在 <code>location2.vcs &amp;&amp; Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code> 时订阅——非 git 目录下文件树不实时更新。补丁将条件改为只判 <code>Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER</code>，任意目录都订阅 watcher；renderer 侧暴露 <code>tree.dir</code> 供轮询兜底枚举已加载目录、对缺失 dir store 加防御、兜底间隔 20s → 5s。</div>
-  <div class="note"><strong>集成终端</strong>：渲染进程 <code>patch/xterm/</code>（xterm.js 5.5 + addon-fit）部署到 <code>out/renderer/xterm/</code>；主进程复用已打包的 <code>@lydell/node-pty-win32-x64</code>（conpty），<code>oc-term-spawn</code> 返回 session id、<code>oc-term-input/resize/kill</code> 下发指令、<code>oc-term-data/exit</code> 推送到渲染层，<code>ocTerms</code> Map 防 GC。面板挂载到右侧窗口列容器（含 <code>#review-panel</code> 的 flex-col）底部，只占右侧预览宽度，展开 220px / 收起 30px 标题栏；MutationObserver + <code>isConnected</code> + 容器归属校验（挂错容器即移除重建）应对 Solid 重建 body 子树 / 右侧列延迟出现。</div>
+  <div class="note"><strong>原版终端修复</strong>（<code>app.asar.unpacked</code> 加载 conpty）：打包后主进程 JS 位于 asar 虚拟文件系统内，内嵌服务端运行时（原生 Node/Bun）的 require 不具 asar 重定向能力，dlopen asar 内部路径的 <code>.node</code> 报 error 126 → 原版终端 PTY 全 500。补丁在 <code>@lydell/node-pty-win32-x64/lib/utils.js</code> 的 <code>loadNativeModule</code> 中把 <code>__dirname.replace(/app\.asar/, "app.asar.unpacked")</code> 作为首选基路径——<code>.node</code> 由 electron-builder 解包到 <code>app.asar.unpacked</code>，据此直接 dlopen。打包须 <code>--unpack="**/*.node" --unpack="**/prebuilds/**"</code>：asar 内有记录（Electron 主进程 <code>require('@parcel/watcher-win32-x64')</code> 等懒加载才不会静默失败）而实体在 unpacked。修复后原版 <code>#terminal-panel</code>（ghostty-web WASM 渲染 + <code>POST http://127.0.0.1:50757/pty</code> 流式 PTY）即恢复，"新建终端"多开标签页。</div>
 
   <h2>目录结构</h2>
 <pre><code>patch/
-├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览 + 集成终端，~1850 行）
+├─ filetree-menu.js        # 主补丁（右键菜单 + 编辑/预览 + 文件树，1566 行）
 ├─ needles/                # 各 patch 段的定位锚点（原子化校验）
 ├─ scripts/
 │  ├─ apply_patch.py       # 完整补丁（bundle / main / preload / index.html）
@@ -168,7 +169,9 @@
     <li><code>cdp_nativebar_test.mjs</code> / <code>cdp_nativebar_switch.mjs</code> — 预览窗口上方工具栏（编辑按钮出现、点击进入编辑、切换文件标题更新）</li>
     <li><code>cdp_nativebar_allsessions.mjs</code> — 跨会话/跨项目：每个会话 tab 点击文件均有工具栏（覆盖对话流 + 固定预览两种布局）</li>
     <li><code>cdp_hlkeep_test.mjs</code> — 编辑保留预览语法高亮（底层克隆高亮 + 透明编辑器，行对齐 + 新行同步）</li>
-    <li><code>cdp_terminal_test.mjs</code> — 集成终端：面板存在 → 展开 → xterm 渲染 → 输入命令 → 输出回显 → <b>拖拽手柄调高度</b> → 收起保留标题栏 → 再展开恢复记忆高度</li>
+    <li><code>cdp_terminal_test.mjs</code> — 原版终端：<code>#terminal-panel</code> 存在 → 找到"新建终端"按钮 → 点击创建标签页 → ghostty canvas 非空渲染（PTY 已 spawn，无 error 126）→ 再点多开会话</li>
+    <li><code>cdp_termpanel_drag_test.mjs</code> — 面板拖拽：打开 → 找到面板上方真手柄 → 拖到底不消失（min:100）→ 拖回 → 关全会话后重开（自动新建）</li>
+    <li><code>cdp_drawer_test.mjs</code> — 终端标题栏：钩子注入 → 关闭时置底可见 → 点击调出并新建会话 → 拖到底点击拉回展开 → 点击按钮收起 → 标题栏仍置底</li>
     <li>应用需以 <code>OPENCODE_DEBUG_PORT=9222</code> 启动</li>
   </ul>
   <div class="note"><strong>OOPIF 陷阱</strong>：custom scheme 的 iframe 是独立渲染进程，主 target 的 CDP 看不到它，必须 <code>Target.attachToTarget</code> 进 iframe 内部验证——<code>cdp_preview_verify.mjs</code> 即此做法。</div>

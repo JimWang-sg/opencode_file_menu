@@ -14,6 +14,9 @@ patches_done = []
 
 def patch_file(path, old, new, expect=1):
     s = open(path, encoding="utf-8", errors="replace").read()
+    if new in s:  # idempotent: skip when already applied (safe re-runs)
+        patches_done.append(f"{os.path.basename(path)} (skip, already applied): {old.splitlines()[0].strip()[:60]}")
+        return
     n = s.count(old)
     if n != expect:
         print(f"[FAIL] {os.path.basename(path)}: expected {expect} match(es) of anchor, found {n}")
@@ -112,6 +115,27 @@ old = 'function parseMarkdown(text2) {\n'
 new = (
     'globalThis.__ocParseMarkdown = (text2) => parseMarkdown(text2).then(sanitizeMarkdown);\n'
     'function parseMarkdown(text2) {\n'
+)
+patch_file(r, old, new)
+
+# 1g) terminal panel: disable drag-to-collapse (collapseThreshold 50 -> 0)
+#     The original ResizeHandle sets collapsed=true while the dragged size < threshold,
+#     and on mouse-up fires onCollapse -> terminal.close() -> the panel vanishes with
+#     no handle left to pull it back. With threshold 0 the collapse branch is never
+#     entered, so dragging all the way down keeps the panel at its min height (100px).
+old = 'collapseThreshold: 50'
+new = 'collapseThreshold: 0'
+patch_file(r, old, new, expect=3)
+
+# 1h) expose the original terminal toggle/resize to the menu script so the
+#     always-visible drawer button can open/close/restore the terminal panel.
+#     useSessionCommands() holds view/terminal2/layout in scope here, so the
+#     closures below reuse the exact same instances as the ctrl+` command.
+old = 'const viewCmds = () => [viewCommand({\n'
+new = (
+    'globalThis.__ocToggleTerminal = () => { if (view().terminal.opened()) { terminal2.cancelFocus(); view().terminal.close(); return; } terminal2.requestFocus(terminal2.active()); view().terminal.open(); };\n'
+    'globalThis.__ocTerminalResize = (h) => { layout.terminal.resize(h); };\n'
+    'const viewCmds = () => [viewCommand({\n'
 )
 patch_file(r, old, new)
 
@@ -359,101 +383,6 @@ old = '  registerRendererProtocol();\n'
 new = '  registerRendererProtocol();\n  registerOcFileProtocol();\n'
 patch_file(m, old, new)
 
-# 2f) interactive terminal: streamed PTY sessions (spawn/input/resize/kill + data push)
-old = (
-    '  ipcMain.handle("fs-clipboard-write", (_event, text) => {\n'
-    '    clipboard.writeText(String(text ?? ""));\n'
-    '    return { ok: true };\n'
-    '  });\n'
-    '  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks());\n'
-)
-new = (
-    '  ipcMain.handle("fs-clipboard-write", (_event, text) => {\n'
-    '    clipboard.writeText(String(text ?? ""));\n'
-    '    return { ok: true };\n'
-    '  });\n'
-    '  const ocTerms = new Map();\n'
-    '  let ocTermSeq = 0;\n'
-    '  ipcMain.handle("oc-term-spawn", (event, opts = {}) => {\n'
-    '    try {\n'
-    '      const id = "oc-term-" + ++ocTermSeq;\n'
-    '      const isWin = process.platform === "win32";\n'
-    '      const shell = opts.shell || (isWin ? "powershell.exe" : process.env.SHELL || "/bin/bash");\n'
-    '      const args = opts.shellArgs || (isWin ? [] : ["-l"]);\n'
-    '      const cwd = opts.cwd || process.env.USERPROFILE || process.env.HOME || process.cwd();\n'
-    '      const child = pty.spawn(shell, args, {\n'
-    '        name: "xterm-256color",\n'
-    '        cols: opts.cols || 80,\n'
-    '        rows: opts.rows || 24,\n'
-    '        cwd,\n'
-    '        env: process.env,\n'
-    '        useConpty: true\n'
-    '      });\n'
-    '      child.onData((data) => {\n'
-    '        try {\n'
-    '          event.sender.send("oc-term-data", { id, data });\n'
-    '        } catch {\n'
-    '        }\n'
-    '      });\n'
-    '      child.onExit((e) => {\n'
-    '        ocTerms.delete(id);\n'
-    '        try {\n'
-    '          event.sender.send("oc-term-exit", { id, code: e.exitCode });\n'
-    '        } catch {\n'
-    '        }\n'
-    '      });\n'
-    '      ocTerms.set(id, child);\n'
-    '      return { ok: true, id, shell, cwd };\n'
-    '    } catch (error) {\n'
-    '      return { ok: false, error: (error && error.message) || String(error) };\n'
-    '    }\n'
-    '  });\n'
-    '  ipcMain.on("oc-term-input", (_event, payload) => {\n'
-    '    const child = ocTerms.get(payload && payload.id);\n'
-    '    if (child) child.write(String(payload.data ?? ""));\n'
-    '  });\n'
-    '  ipcMain.on("oc-term-resize", (_event, payload) => {\n'
-    '    const child = ocTerms.get(payload && payload.id);\n'
-    '    if (child && payload.cols && payload.rows) child.resize(payload.cols, payload.rows);\n'
-    '  });\n'
-    '  ipcMain.on("oc-term-kill", (_event, payload) => {\n'
-    '    const child = ocTerms.get(payload && payload.id);\n'
-    '    if (child) {\n'
-    '      try {\n'
-    '        child.kill();\n'
-    '      } catch {\n'
-    '      }\n'
-    '      ocTerms.delete(payload.id);\n'
-    '    }\n'
-    '  });\n'
-    '  ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks());\n'
-)
-patch_file(m, old, new)
-
-# ---------------- preload ----------------
-p = PRELOAD
-old = '  getWindowID: () => electron.ipcRenderer.invoke("get-window-id"),\n'
-new = (
-    '  terminal: {\n'
-    '    spawn: (opts) => electron.ipcRenderer.invoke("oc-term-spawn", opts),\n'
-    '    write: (id, data) => electron.ipcRenderer.send("oc-term-input", { id, data }),\n'
-    '    resize: (id, cols, rows) => electron.ipcRenderer.send("oc-term-resize", { id, cols, rows }),\n'
-    '    kill: (id) => electron.ipcRenderer.send("oc-term-kill", { id }),\n'
-    '    onData: (cb) => {\n'
-    '      const handler = (_e, payload) => cb(payload);\n'
-    '      electron.ipcRenderer.on("oc-term-data", handler);\n'
-    '      return () => electron.ipcRenderer.removeListener("oc-term-data", handler);\n'
-    '    },\n'
-    '    onExit: (cb) => {\n'
-    '      const handler = (_e, payload) => cb(payload);\n'
-    '      electron.ipcRenderer.on("oc-term-exit", handler);\n'
-    '      return () => electron.ipcRenderer.removeListener("oc-term-exit", handler);\n'
-    '    }\n'
-    '  },\n'
-    '  getWindowID: () => electron.ipcRenderer.invoke("get-window-id"),\n'
-)
-patch_file(p, old, new)
-
 # ---------------- index.html ----------------
 h = INDEX_HTML
 old = '    <script type="module" crossorigin src="./assets/main-BMZ7e6bl.js"></script>\n'
@@ -466,17 +395,6 @@ patch_file(h, old, new)
 # ---------------- menu script ----------------
 shutil.copyfile(MENU_SRC, os.path.join(EXTRACT, "out", "renderer", "filetree-menu.js"))
 patches_done.append("filetree-menu.js -> out/renderer/filetree-menu.js")
-
-# ---------------- xterm terminal assets ----------------
-xterm_dir = os.path.join(EXTRACT, "out", "renderer", "xterm")
-os.makedirs(xterm_dir, exist_ok=True)
-for xname in ("xterm.js", "xterm.css", "addon-fit.js"):
-    xsrc = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "xterm", xname)
-    if os.path.exists(xsrc):
-        shutil.copyfile(xsrc, os.path.join(xterm_dir, xname))
-        patches_done.append(f"xterm/{xname} -> out/renderer/xterm/{xname}")
-    else:
-        print(f"[WARN] missing xterm asset: {xsrc}")
 
 print("ALL PATCHES OK:")
 for p in patches_done:

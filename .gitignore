@@ -23,3 +23,10 @@ Thumbs.db
 app.asar.drag
 app.asar.drag2
 app.asar.orig-*
+app.asar.fixed.js
+app.asar.fixed.js.unpacked/
+app.asar.no-term.js
+app.asar.deployed-backup
+# 调试脚本备份与 asar 构建备份
+patch/scripts/_debug/
+backup/
